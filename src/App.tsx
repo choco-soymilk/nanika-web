@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
 import { useBanterLoop } from './hooks/useBanterLoop';
+import { useWakeLock } from './hooks/useWakeLock';
 import { WidgetSimulator } from './components/WidgetSimulator';
 import { ChatHistory } from './components/ChatHistory';
 import { SettingsModal } from './components/SettingsModal';
 import { Send, Settings as SettingsIcon, AlertCircle, ShieldAlert } from 'lucide-react';
 
 export default function App() {
+  useWakeLock();
+
   const {
     settings,
     chatHistory,
