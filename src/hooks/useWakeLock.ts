@@ -45,15 +45,15 @@ export const useWakeLock = () => {
     video.setAttribute('muted', '');
     video.muted = true;
     
-    // Hide the video element off-screen
-    video.style.position = 'absolute';
-    video.style.top = '0';
-    video.style.left = '0';
-    video.style.width = '1px';
-    video.style.height = '1px';
+    // Keep the video element in the viewport and on top so Safari visibility checks do not pause it
+    video.style.position = 'fixed';
+    video.style.bottom = '2px';
+    video.style.right = '2px';
+    video.style.width = '4px';
+    video.style.height = '4px';
     video.style.opacity = '0.01';
     video.style.pointerEvents = 'none';
-    video.style.zIndex = '-9999';
+    video.style.zIndex = '999999';
 
     document.body.appendChild(video);
     videoRef.current = video;
