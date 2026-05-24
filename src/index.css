@@ -488,10 +488,9 @@ body {
 
 /* 5. Mascot Sprites with floating & scaling reactions */
 .character-sprite-container {
-  transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  display: flex;
-  justify-content: center;
-  align-items: flex-end;
+  display: grid;
+  grid-template-areas: "sprite";
+  place-items: end center;
   background: transparent;
   animation: float-character 3.5s infinite ease-in-out alternate;
 }
@@ -514,21 +513,29 @@ body {
   }
 }
 
-/* Active speaker scale highlight */
-.character-sprite-container.active {
+/* Active speaker scale highlight applied to child sprites */
+.character-sprite-container.active .character-sprite {
   transform: scale(1.08);
-  animation-play-state: paused; /* Pause floating animation slightly for active speaker */
 }
 
-/* Click / Touch scale down slightly */
-.character-sprite-container.pressed {
+/* Click / Touch scale down slightly applied to child sprites */
+.character-sprite-container.pressed .character-sprite {
   transform: scale(0.95) !important;
 }
 
 .character-sprite {
+  grid-area: sprite;
   object-fit: contain;
   pointer-events: none;
-  image-rendering: -webkit-optimize-contrast;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  opacity: 0;
+  transform: scale(1);
+  transition: opacity 0.15s ease-in-out, transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.character-sprite.active {
+  opacity: 1;
 }
 
 .strawberry-img {

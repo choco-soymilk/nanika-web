@@ -1,13 +1,14 @@
 import React, { useRef, useState } from 'react';
-import type { CharacterName } from '../types';
+import type { CharacterName, Emotion } from '../types';
 
 interface SpriteProps {
   character: CharacterName;
   isActive: boolean;
+  emotion?: Emotion;
   onTouch?: (gesture: 'tap' | 'poke' | 'pet') => void;
 }
 
-export const CharacterSprite: React.FC<SpriteProps> = ({ character, isActive, onTouch }) => {
+export const CharacterSprite: React.FC<SpriteProps> = ({ character, isActive, emotion, onTouch }) => {
   const [isPressed, setIsPressed] = useState(false);
   const touchStartRef = useRef<{ x: number; y: number; time: number }>({ x: 0, y: 0, time: 0 });
   const isDraggingRef = useRef(false);
@@ -79,10 +80,40 @@ export const CharacterSprite: React.FC<SpriteProps> = ({ character, isActive, on
   };
 
   const isStrawberry = character === 'strawberry';
-  
-  // Choose sprite image source. Note that these are copied to public/assets/
-  const spriteSrc = isStrawberry ? '/assets/strawberry.png' : '/assets/choco.png';
   const characterLabel = isStrawberry ? 'strawberry' : 'choco';
+
+  // Determine active expression for Strawberry
+  let activeExpression = 'calm';
+  if (isStrawberry && isActive && emotion) {
+    switch (emotion) {
+      case 'happy':
+      case 'excited':
+        activeExpression = 'happy';
+        break;
+      case 'worried':
+      case 'flustered':
+      case 'sad':
+        activeExpression = 'troubled';
+        break;
+      case 'angry':
+        activeExpression = 'angry';
+        break;
+      case 'surprised':
+        activeExpression = 'surprised';
+        break;
+      default:
+        activeExpression = 'calm';
+    }
+  }
+
+  // Strawberry expressions list
+  const strawberrySprites = [
+    { id: 'calm', src: '/assets/strawberry.png' },
+    { id: 'happy', src: '/assets/strawberry_happy.png' },
+    { id: 'troubled', src: '/assets/strawberry_troubled.png' },
+    { id: 'angry', src: '/assets/strawberry_angry.png' },
+    { id: 'surprised', src: '/assets/strawberry_surprised.png' },
+  ];
 
   return (
     <div
@@ -95,12 +126,25 @@ export const CharacterSprite: React.FC<SpriteProps> = ({ character, isActive, on
       onTouchEnd={onTouchEnd}
       style={{ cursor: 'pointer', userSelect: 'none', WebkitUserSelect: 'none' }}
     >
-      <img
-        src={spriteSrc}
-        alt={isStrawberry ? 'Strawberry' : 'Choco'}
-        className={`character-sprite ${isStrawberry ? 'strawberry-img' : 'choco-img'}`}
-        draggable={false}
-      />
+      {isStrawberry ? (
+        strawberrySprites.map((sprite) => (
+          <img
+            key={sprite.id}
+            src={sprite.src}
+            alt={`Strawberry ${sprite.id}`}
+            className={`character-sprite strawberry-img ${activeExpression === sprite.id ? 'active' : ''}`}
+            draggable={false}
+          />
+        ))
+      ) : (
+        <img
+          src="/assets/choco.png"
+          alt="Choco"
+          className="character-sprite choco-img active"
+          draggable={false}
+        />
+      )}
     </div>
   );
 };
+

@@ -144,6 +144,7 @@ export const WidgetSimulator: React.FC<WidgetProps> = ({
             <CharacterSprite
               character="strawberry"
               isActive={activeChar === 'strawberry'}
+              emotion={strawberryEmotion}
               onTouch={(gesture) => onCharacterTouch?.('strawberry', gesture)}
             />
             <div className="name-tag">딸기</div>
@@ -162,6 +163,7 @@ export const WidgetSimulator: React.FC<WidgetProps> = ({
             <CharacterSprite
               character="choco"
               isActive={activeChar === 'choco'}
+              emotion={chocoEmotion}
               onTouch={(gesture) => onCharacterTouch?.('choco', gesture)}
             />
             <div className="name-tag">초코</div>
