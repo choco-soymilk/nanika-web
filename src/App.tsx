@@ -18,7 +18,6 @@ export default function App() {
     setApiError,
     sendMessage,
     triggerTouch,
-    triggerSpecialEvent,
     saveSettings,
     clearHistory,
     onBanterComplete,
@@ -37,8 +36,8 @@ export default function App() {
     setMessageInput('');
   };
 
-  const handleSaveSettings = (apiKey: string, banterInterval: number, userName: string) => {
-    saveSettings(apiKey, banterInterval, userName);
+  const handleSaveSettings = (apiKey: string, banterInterval: number, userName: string, maxHistoryLimit: number) => {
+    saveSettings(apiKey, banterInterval, userName, maxHistoryLimit);
   };
 
   // Disable text entry ONLY when API request is pending (loading)
@@ -145,7 +144,6 @@ export default function App() {
           isOpen={isSettingsOpen}
           onClose={() => setIsSettingsOpen(false)}
           onSave={handleSaveSettings}
-          onTriggerEvent={triggerSpecialEvent}
         />
 
       </div>

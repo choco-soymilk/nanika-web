@@ -9,6 +9,7 @@ export function useBanterLoop() {
     apiKey: StorageService.getApiKey(),
     banterInterval: StorageService.getBanterInterval(),
     userName: StorageService.getUserName(),
+    maxHistoryLimit: StorageService.getMaxHistoryLimit(),
   }));
 
   // History & dialogue state
@@ -43,7 +44,8 @@ export function useBanterLoop() {
         ...line,
         timestamp: line.timestamp || (now + i),
       }));
-      const nextHistory = [...prev, ...updatedLines];
+      const limit = StorageService.getMaxHistoryLimit();
+      const nextHistory = [...prev, ...updatedLines].slice(-limit);
       StorageService.setChatHistory(nextHistory);
       return nextHistory;
     });
@@ -125,7 +127,8 @@ export function useBanterLoop() {
       timestamp: Date.now(),
     };
     setChatHistory((prev) => {
-      const nextHistory = [...prev, userLine];
+      const limit = StorageService.getMaxHistoryLimit();
+      const nextHistory = [...prev, userLine].slice(-limit);
       StorageService.setChatHistory(nextHistory);
       return nextHistory;
     });
@@ -154,11 +157,20 @@ export function useBanterLoop() {
   }, [triggerBanter]);
 
   // Settings modification
-  const saveSettings = useCallback((apiKey: string, banterInterval: number, userName: string) => {
+  const saveSettings = useCallback((apiKey: string, banterInterval: number, userName: string, maxHistoryLimit: number) => {
     StorageService.setApiKey(apiKey);
     StorageService.setBanterInterval(banterInterval);
     StorageService.setUserName(userName);
-    setSettings({ apiKey, banterInterval, userName });
+    StorageService.setMaxHistoryLimit(maxHistoryLimit);
+    
+    // Trim current chat history state and localStorage when saved
+    setChatHistory((prev) => {
+      const trimmed = prev.slice(-maxHistoryLimit);
+      StorageService.setChatHistory(trimmed);
+      return trimmed;
+    });
+
+    setSettings({ apiKey, banterInterval, userName, maxHistoryLimit });
     setApiError(null);
   }, []);
 

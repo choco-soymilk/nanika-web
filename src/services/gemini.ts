@@ -14,7 +14,40 @@ const VALID_EMOTIONS: Emotion[] = [
   'angry', 'encouraging', 'cool', 'worried', 'sleepy'
 ];
 
-function getSystemPrompt(userName: string): string {
+async function getDeviceContextHint(): Promise<string> {
+  // 1. Time hint
+  const hour = new Date().getHours();
+  let timeHint = '낮';
+  if (hour >= 0 && hour < 5) timeHint = '새벽';
+  else if (hour >= 5 && hour < 9) timeHint = '아침';
+  else if (hour >= 9 && hour < 12) timeHint = '오전';
+  else if (hour >= 12 && hour < 14) timeHint = '점심';
+  else if (hour >= 14 && hour < 18) timeHint = '오후';
+  else if (hour >= 18 && hour < 22) timeHint = '저녁';
+  else timeHint = '밤';
+
+  const timeString = `${timeHint} (${hour}시)`;
+
+  // 2. Battery hint
+  let batteryHint = '알 수 없음';
+  const nav = navigator as any;
+  if (nav && typeof nav.getBattery === 'function') {
+    try {
+      const battery = await nav.getBattery();
+      const pct = Math.round(battery.level * 100);
+      const charging = battery.charging ? '충전 중' : '배터리 사용 중';
+      batteryHint = `${pct}% (${charging})`;
+    } catch (e) {
+      console.warn('Failed to get battery status:', e);
+    }
+  }
+
+  return `[Device State Hint]
+- Time of Day: ${timeString}
+- Battery: ${batteryHint}`;
+}
+
+function getSystemPrompt(userName: string, deviceContext: string): string {
   return `Output a JSON array containing a short comedic dialogue between Strawberry (딸기) and Choco (초코) in Korean. No markdown, no explanation.
 
 Characters & Personalities:
@@ -31,6 +64,9 @@ User Interaction Guideline:
 - IMPORTANT: The user's name is "${userName}". When talking to or about the user, Strawberry and Choco must address them as "${userName}" or use appropriate natural Korean honorifics (e.g. adding "-님" like "${userName}님" or other natural forms).
 - When a user input is provided, they MUST react to the user's message directly first! Integrate the user's topic into the banter, showing that they are talking back to the user. Do not ignore the user's topic and start a completely random conversation.
 - If the user touches them (tap, poke, pet), they must react to the touch gesture in character (e.g. Strawberry excited by pets, Choco acting flustered but showing subtle positivity/tsundere response).
+
+${deviceContext}
+(Note: You can subtly reference the above Device State Hint, such as battery low or current time of day, to enrich the banter, but keep it natural and avoid being overly forced/repetitive. Do not talk about the weather/time unless it naturally blends with their dialogue.)
 
 Few-shot Examples (Generate dialogue matching this exact tone and format):
 
@@ -57,16 +93,37 @@ Emotion values: calm happy sad angry surprised philosophical cynical smug fluste
 All text in Korean, under 20 characters per line.`;
 }
 
-const DYNAMIC_BANTER_PROMPTS = [
-  'Generate funny banter in Korean where Strawberry tries to perform a failed occult/fortune-telling ritual on Choco, who is highly skeptical.',
-  'Generate cynical banter in Korean where Choco laments being easily crushed or creased when squeezed, and Strawberry tries to suggest ridiculous protection methods.',
-  'Generate existential banter in Korean where Choco debates the vanity of milk expiration dates while Strawberry is distracted by sweet snacks.',
-  'Generate a goofy argument in Korean about a useless trivia debate (e.g., pineapple pizza, mint chocolate, or dipping vs. pouring sauce).',
-  'Generate otaku-style banter in Korean with subtle 2000s anime/gaming references (e.g., Code Geass, subculture tropes) where Choco acts like a dark hero and Strawberry is amused or confused.',
-  'Generate sweet but weird banter in Korean where Strawberry claims she can see a ghost sitting on top of Choco, and Choco tries to look cool but is secretly spooked.',
-  'Generate banter in Korean where Choco acts smugly superior about dark chocolate philosophy, and Strawberry counters with the supremacy of strawberry syrup.',
-  'Generate a humorous discussion in Korean where Strawberry wants to explore a haunted house, and Choco gives a realistic cost-benefit analysis of ghost hunting.',
+const SITUATIONS = [
+  '늦은 새벽녘, 스탠드 불빛만 켜진 고요하고 적막한 방 안',
+  '아침 햇살이 창가로 밝게 들어오는 활기찬 아침 시간',
+  '비가 추적추적 내려 약간 눅눅하고 어두운 낮 시간',
+  '점심 식사 직후, 식곤증이 몰려와 몸이 나른해지는 오후 1~2시경',
+  '노을이 붉게 지기 시작하여 나른하고 평화로운 해질녘',
+  '모니터 화면만 깜빡이는 조용하고 어두운 한밤중의 책상 위',
+  '바깥에서 시끄러운 오토바이 소리나 생활 소음이 가끔 들려오는 낮 시간',
+  '바람이 매섭게 부는 추운 날씨 속, 보일러가 켜져 따뜻한 방 안',
+  '주변에 아무도 없어 극도로 조용한 도서관/작업실 같은 분위기'
 ];
+
+const TOPICS = [
+  '딸기가 초코에게 어설픈 영매술이나 신년 운세 보기를 시도함',
+  '우유팩이 구겨지는 초코의 물리적 한계와 딸기의 엉뚱하고 귀여운 해결책 제안',
+  '초코가 유통기한의 무상함에 대해 심오하게 실존적 토론을 벌이고 딸기는 달콤한 간식에 한눈을 팜',
+  '파인애플 피자, 민초, 탕수육 부먹찍먹 등 아주 쓸데없고 사소한 주제로 유치하게 말다툼',
+  '초코가 2000년대 고전 애니/게임 또는 최신 판타지 웹소설/게임 서브컬처 드립(중2병 흑염룡, 상태창, 마안 등 장르 클리셰, 특정 작품명 직접 언급 금지)을 치며 흑화하고 딸기가 맞장구치거나 황당해함',
+  '딸기가 초코 머리 위에 무서운 귀신이 앉아있다고 거짓말하며 장난치고 초코는 겉으론 덤덤한 척하지만 속으로 겁먹음',
+  '건대우유 출신 초코의 초코우유 자부심과 딸기 시럽의 위대함에 대한 티격태격 대결',
+  '흉가 체험을 하러 가자고 조르는 딸기와, 이에 대해 가성비와 손익 분기점 분석을 들이대며 팩폭을 날리는 초코',
+  '어플 내 위젯의 조그마한 상자 화면 안에서 서로 끼어 살고 있는 본인들의 처지에 대한 한탄'
+];
+
+function getRandomBanterPrompt(): string {
+  const situation = SITUATIONS[Math.floor(Math.random() * SITUATIONS.length)];
+  const topic = TOPICS[Math.floor(Math.random() * TOPICS.length)];
+  return `Generate comedic dialogue in Korean matching this context:
+- Situation: ${situation}
+- Topic: ${topic}`;
+}
 
 // Simple JSON Repair logic
 function repairJson(str: string): string {
@@ -179,14 +236,25 @@ export const GeminiService = {
 
     try {
       const genAI = new GoogleGenerativeAI(apiKey);
+      const deviceContext = await getDeviceContextHint();
+      
       // Using gemini-3.1-flash-lite which is perfect for this fast JSON generation
       const model = genAI.getGenerativeModel({
         model: 'gemini-3.1-flash-lite',
-        systemInstruction: getSystemPrompt(StorageService.getUserName()),
+        systemInstruction: getSystemPrompt(StorageService.getUserName(), deviceContext),
       });
 
+      // Fetch last 3 dialogue lines from history to feed into the prompt compactly (saving tokens)
+      const history = StorageService.getChatHistory();
+      const last3 = history.slice(-3);
+      const historyHint = last3.length > 0
+        ? `\n[최근 대화 기록 (유사 주제 반복 금지/자연스럽게 연결): ${last3.map(l => `${l.character === 'strawberry' ? '딸기' : l.character === 'choco' ? '초코' : '주인'}:${l.text}`).join(' -> ')}]`
+        : '';
+
+      const finalPrompt = `${promptText}${historyHint}`;
+
       const result = await model.generateContent({
-        contents: [{ role: 'user', parts: [{ text: promptText }] }],
+        contents: [{ role: 'user', parts: [{ text: finalPrompt }] }],
         generationConfig: {
           temperature: 0.95,
           maxOutputTokens: 512,
@@ -236,8 +304,7 @@ export const GeminiService = {
       prompt = `The owner just performed a "${action}" gesture (tap, poke, or pet) on character "${char}" (either strawberry or choco). Generate Korean reaction dialogue in character (4-6 lines) reacting to this gesture.`;
     } else {
       // Pick a random prompt
-      const idx = Math.floor(Math.random() * DYNAMIC_BANTER_PROMPTS.length);
-      prompt = DYNAMIC_BANTER_PROMPTS[idx];
+      prompt = getRandomBanterPrompt();
     }
 
     try {

@@ -38,4 +38,5 @@ export interface AppSettings {
   apiKey: string;
   banterInterval: number; // in seconds (e.g. 60, 120, 300)
   userName: string;
+  maxHistoryLimit: number;
 }

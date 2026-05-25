@@ -5,6 +5,7 @@ const KEYS = {
   BANTER_INTERVAL: 'nanika_web_banter_interval',
   CHAT_HISTORY: 'nanika_web_chat_history',
   USER_NAME: 'nanika_web_user_name',
+  MAX_HISTORY_LIMIT: 'nanika_web_max_history_limit',
 };
 
 export const StorageService = {
@@ -43,6 +44,16 @@ export const StorageService = {
     localStorage.setItem(KEYS.USER_NAME, trimmed === '주인님' || !trimmed ? '주인' : trimmed);
   },
 
+  getMaxHistoryLimit(): number {
+    const val = localStorage.getItem(KEYS.MAX_HISTORY_LIMIT);
+    // Default to 200 if not set
+    return val ? parseInt(val, 10) : 200;
+  },
+
+  setMaxHistoryLimit(limit: number): void {
+    localStorage.setItem(KEYS.MAX_HISTORY_LIMIT, limit.toString());
+  },
+
   getChatHistory(): DialogueLine[] {
     const val = localStorage.getItem(KEYS.CHAT_HISTORY);
     if (!val) return [];
@@ -55,8 +66,8 @@ export const StorageService = {
   },
 
   setChatHistory(history: DialogueLine[]): void {
-    // Keep max 200 items in history to avoid localStorage filling up (limit is 5MB)
-    const trimmed = history.slice(-200);
+    const limit = this.getMaxHistoryLimit();
+    const trimmed = history.slice(-limit);
     localStorage.setItem(KEYS.CHAT_HISTORY, JSON.stringify(trimmed));
   },
 

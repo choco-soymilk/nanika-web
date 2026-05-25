@@ -73,26 +73,26 @@ const RANDOM_DIALOGUES: DialogueLine[][] = [
     },
   ],
 
-  // 4. 코드기어스 / 2000년대 애니 드립
+  // 4. 중2병 / 상태창 드립 (2000년대 & 현대 서브컬처)
   [
     {
       character: 'strawberry',
-      text: '초코씨, 오늘 뭔가 결단력 있어 보여요. 멋져요!',
+      text: '초코씨, 오늘따라 팔을 감싸 쥐고 왜 그렇게 진지해 보여요?',
       emotion: 'excited',
     },
     {
       character: 'choco',
-      text: '훗. 나는 명령한다 — 오늘 하루도 살아남으라고.',
+      text: '훗... 내 왼팔의 흑염룡이 날뛰는군. 그리고 눈앞에 상태창이 보인다.',
       emotion: 'cool',
     },
     {
       character: 'strawberry',
-      text: '그거 기어스인가요?! 우와... 근데 저한텐 안 통하는 것 같아요.',
+      text: '우와! 흑염룡에 상태창이라니! 완전 과거랑 현대 판타지의 융합이네요!',
       emotion: 'surprised',
     },
     {
       character: 'choco',
-      text: '...마안의 힘은 삼각 비닐팩에겐 효과가 없다. 이미 알고 있었다.',
+      text: '...시끄럽다. 마법의 상태창도 이 우유팩의 찌그러짐을 해결하진 못하니까.',
       emotion: 'smug',
     },
   ],

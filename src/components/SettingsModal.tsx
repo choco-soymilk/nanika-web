@@ -1,13 +1,12 @@
 import React, { useState } from 'react';
 import type { AppSettings } from '../types';
-import { X, Eye, EyeOff, Key, ShieldAlert, Sparkles, Battery, Timer, RefreshCw, User } from 'lucide-react';
+import { X, Eye, EyeOff, Key, ShieldAlert, Sparkles, Timer, User, MessageSquare } from 'lucide-react';
 
 interface SettingsProps {
   settings: AppSettings;
   isOpen: boolean;
   onClose: () => void;
-  onSave: (apiKey: string, banterInterval: number, userName: string) => void;
-  onTriggerEvent: (event: 'battery_low' | 'idle_3hours') => void;
+  onSave: (apiKey: string, banterInterval: number, userName: string, maxHistoryLimit: number) => void;
 }
 
 export const SettingsModal: React.FC<SettingsProps> = ({
@@ -15,26 +14,26 @@ export const SettingsModal: React.FC<SettingsProps> = ({
   isOpen,
   onClose,
   onSave,
-  onTriggerEvent,
 }) => {
   const [apiKey, setApiKey] = useState(settings.apiKey);
   const [banterInterval, setBanterInterval] = useState(settings.banterInterval);
   const [userName, setUserName] = useState(settings.userName || '주인');
+  const [maxHistoryLimit, setMaxHistoryLimit] = useState(settings.maxHistoryLimit || 200);
   const [showKey, setShowKey] = useState(false);
 
   if (!isOpen) return null;
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    onSave(apiKey.trim(), banterInterval, userName.trim() || '주인');
+    onSave(apiKey.trim(), banterInterval, userName.trim() || '주인', maxHistoryLimit);
     onClose();
   };
 
   const intervals = [
     { label: '끔', value: 0 },
-    { label: '10초 (테스트)', value: 10 },
     { label: '1분', value: 60 },
     { label: '2분', value: 120 },
+    { label: '3분', value: 180 },
     { label: '5분', value: 300 },
     { label: '10분', value: 600 },
   ];
@@ -123,31 +122,25 @@ export const SettingsModal: React.FC<SettingsProps> = ({
             </div>
           </div>
 
-          <div className="form-section divider">
-            <label className="form-label label-subtitle">이벤트 강제 발생 시뮬레이션</label>
-            <div className="test-buttons-row">
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={() => {
-                  onTriggerEvent('battery_low');
-                  onClose();
-                }}
-              >
-                <Battery size={14} style={{ marginRight: '4px' }} />
-                배터리 부족 경고
-              </button>
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={() => {
-                  onTriggerEvent('idle_3hours');
-                  onClose();
-                }}
-              >
-                <RefreshCw size={14} style={{ marginRight: '4px' }} />
-                3시간 방치 복귀
-              </button>
+          <div className="form-section">
+            <label className="form-label">
+              <MessageSquare size={14} className="icon-purple" style={{ marginRight: '4px' }} />
+              최대 대화 기록 저장 개수
+            </label>
+            <div className="interval-grid">
+              {[100, 200, 300].map((limit) => (
+                <button
+                  type="button"
+                  key={limit}
+                  className={`interval-chip ${maxHistoryLimit === limit ? 'active' : ''}`}
+                  onClick={() => setMaxHistoryLimit(limit)}
+                >
+                  {limit}개
+                </button>
+              ))}
+            </div>
+            <div className="form-hint">
+              대화 내역이 너무 많이 쌓이는 것을 방지하기 위해 지정된 개수만큼만 오래된 순으로 남기고 자동 삭제합니다.
             </div>
           </div>
 
