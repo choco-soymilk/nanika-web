@@ -6,6 +6,7 @@ const KEYS = {
   CHAT_HISTORY: 'nanika_web_chat_history',
   USER_NAME: 'nanika_web_user_name',
   MAX_HISTORY_LIMIT: 'nanika_web_max_history_limit',
+  LANGUAGE: 'nanika_web_language',
 };
 
 export const StorageService = {
@@ -74,4 +75,24 @@ export const StorageService = {
   clearChatHistory(): void {
     localStorage.removeItem(KEYS.CHAT_HISTORY);
   },
+
+  getLanguage(): 'ko' | 'en' {
+    const val = localStorage.getItem(KEYS.LANGUAGE);
+    if (val === 'ko' || val === 'en') {
+      return val;
+    }
+    return navigator.language.startsWith('ko') ? 'ko' : 'en';
+  },
+
+  setLanguage(lang: 'ko' | 'en'): void {
+    localStorage.setItem(KEYS.LANGUAGE, lang);
+  },
 };
+
+export function getEffectiveUserName(userName: string, language: 'ko' | 'en'): string {
+  const trimmed = userName.trim();
+  if (!trimmed || trimmed === '주인' || trimmed === '주인님' || trimmed === 'Master' || trimmed === 'master') {
+    return language === 'ko' ? '주인' : 'Master';
+  }
+  return trimmed;
+}

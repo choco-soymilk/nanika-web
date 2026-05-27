@@ -5,6 +5,7 @@ import { WidgetSimulator } from './components/WidgetSimulator';
 import { ChatHistory } from './components/ChatHistory';
 import { SettingsModal } from './components/SettingsModal';
 import { Send, Settings as SettingsIcon, AlertCircle, ShieldAlert } from 'lucide-react';
+import { translations } from './data/translations';
 
 export default function App() {
   useWakeLock();
@@ -27,6 +28,8 @@ export default function App() {
   const [messageInput, setMessageInput] = useState('');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
+  const t = translations[settings.language || 'ko'];
+
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
     const text = messageInput.trim();
@@ -36,8 +39,14 @@ export default function App() {
     setMessageInput('');
   };
 
-  const handleSaveSettings = (apiKey: string, banterInterval: number, userName: string, maxHistoryLimit: number) => {
-    saveSettings(apiKey, banterInterval, userName, maxHistoryLimit);
+  const handleSaveSettings = (
+    apiKey: string,
+    banterInterval: number,
+    userName: string,
+    maxHistoryLimit: number,
+    language: 'ko' | 'en'
+  ) => {
+    saveSettings(apiKey, banterInterval, userName, maxHistoryLimit, language);
   };
 
   // Disable text entry ONLY when API request is pending (loading)
@@ -56,13 +65,13 @@ export default function App() {
         {/* Header */}
         <header className="phone-header">
           <div className="brand-section">
-            <h1 className="app-title">나니포케</h1>
-            <span className="app-subtitle">Nanika Pocket</span>
+            <h1 className="app-title">{t.appTitle}</h1>
+            <span className="app-subtitle">{t.appSubtitle}</span>
           </div>
           <button
             className="btn-settings"
             onClick={() => setIsSettingsOpen(true)}
-            aria-label="설정 열기"
+            aria-label={t.openSettings}
           >
             <SettingsIcon size={18} />
           </button>
@@ -75,10 +84,10 @@ export default function App() {
             <div className="status-banner error">
               <span style={{ display: 'flex', alignItems: 'center' }}>
                 <AlertCircle size={14} style={{ marginRight: '6px' }} />
-                오류: {apiError}
+                {t.error}: {apiError}
               </span>
               <button className="banner-link" onClick={() => setApiError(null)}>
-                닫기
+                {t.close}
               </button>
             </div>
           )}
@@ -88,16 +97,21 @@ export default function App() {
             <div className="status-banner no-key">
               <span style={{ display: 'flex', alignItems: 'center' }}>
                 <ShieldAlert size={14} style={{ marginRight: '6px' }} />
-                Gemini API 키 없음 — Mock 대화 중
+                {t.noApiKey}
               </span>
               <button className="banner-link" onClick={() => setIsSettingsOpen(true)}>
-                키 입력 →
+                {t.enterKey}
               </button>
             </div>
           )}
 
           {/* Chat History Logs */}
-          <ChatHistory history={chatHistory} onClear={clearHistory} userName={settings.userName} />
+          <ChatHistory
+            history={chatHistory}
+            onClear={clearHistory}
+            userName={settings.userName}
+            language={settings.language}
+          />
         </main>
 
         {/* Mascot Speech Simulator Layer (Floating inside overlay above footer) */}
@@ -108,6 +122,7 @@ export default function App() {
             onComplete={onBanterComplete}
             onLineComplete={onBanterLineComplete}
             onCharacterTouch={triggerTouch}
+            language={settings.language}
           />
         </div>
 
@@ -119,8 +134,8 @@ export default function App() {
               className="input-message"
               placeholder={
                 inputDisabled
-                  ? '답변을 생각 중입니다...'
-                  : '딸기와 초코에게 말 걸기...'
+                  ? t.thinking
+                  : t.talkPlaceholder
               }
               value={messageInput}
               onChange={(e) => setMessageInput(e.target.value)}
@@ -131,7 +146,7 @@ export default function App() {
               type="submit"
               className="btn-send"
               disabled={inputDisabled || !messageInput.trim()}
-              aria-label="전송"
+              aria-label={t.send}
             >
               <Send size={15} />
             </button>

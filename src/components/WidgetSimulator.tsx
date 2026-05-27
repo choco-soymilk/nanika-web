@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import type { DialogueLine, CharacterName, Emotion } from '../types';
 import { SpeechBubble } from './SpeechBubble';
 import { CharacterSprite } from './CharacterSprite';
+import { translations } from '../data/translations';
 
 interface WidgetProps {
   lines: DialogueLine[];
@@ -9,6 +10,7 @@ interface WidgetProps {
   onComplete?: () => void;
   onLineComplete?: (line: DialogueLine) => void;
   onCharacterTouch?: (character: 'strawberry' | 'choco', gesture: 'tap' | 'poke' | 'pet') => void;
+  language?: 'ko' | 'en';
 }
 
 const TYPING_SPEED_MS = 48;
@@ -21,6 +23,7 @@ export const WidgetSimulator: React.FC<WidgetProps> = ({
   onComplete,
   onLineComplete,
   onCharacterTouch,
+  language = 'ko',
 }) => {
   const [strawberryText, setStrawberryText] = useState('');
   const [chocoText, setChocoText] = useState('');
@@ -30,6 +33,7 @@ export const WidgetSimulator: React.FC<WidgetProps> = ({
 
   const runningRef = useRef(false);
   const timeoutsRef = useRef<number[]>([]);
+  const t = translations[language];
 
   const clearTimeouts = () => {
     timeoutsRef.current.forEach(window.clearTimeout);
@@ -135,7 +139,7 @@ export const WidgetSimulator: React.FC<WidgetProps> = ({
           <div className="character-slot strawberry-slot">
             <div className="bubble-container">
               <SpeechBubble
-                text={isLoading && activeChar === 'strawberry' ? '생각 중...' : strawberryText}
+                text={isLoading && activeChar === 'strawberry' ? t.thinkingBubbleStrawberry : strawberryText}
                 emotion={strawberryEmotion}
                 isActive={activeChar === 'strawberry'}
                 side="left"
@@ -147,14 +151,14 @@ export const WidgetSimulator: React.FC<WidgetProps> = ({
               emotion={strawberryEmotion}
               onTouch={(gesture) => onCharacterTouch?.('strawberry', gesture)}
             />
-            <div className="name-tag">딸기</div>
+            <div className="name-tag">{t.charStrawberry}</div>
           </div>
 
           {/* Choco Slot */}
           <div className="character-slot choco-slot">
             <div className="bubble-container">
               <SpeechBubble
-                text={isLoading && activeChar === 'choco' ? '...' : chocoText}
+                text={isLoading && activeChar === 'choco' ? t.thinkingBubbleChoco : chocoText}
                 emotion={chocoEmotion}
                 isActive={activeChar === 'choco'}
                 side="right"
@@ -166,7 +170,7 @@ export const WidgetSimulator: React.FC<WidgetProps> = ({
               emotion={chocoEmotion}
               onTouch={(gesture) => onCharacterTouch?.('choco', gesture)}
             />
-            <div className="name-tag">초코</div>
+            <div className="name-tag">{t.charChoco}</div>
           </div>
 
         </div>

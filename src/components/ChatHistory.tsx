@@ -1,15 +1,24 @@
 import React, { useEffect, useRef } from 'react';
 import type { DialogueLine } from '../types';
 import { Trash2 } from 'lucide-react';
+import { translations } from '../data/translations';
+import { getEffectiveUserName } from '../services/storage';
 
 interface HistoryProps {
   history: DialogueLine[];
   onClear: () => void;
   userName?: string;
+  language?: 'ko' | 'en';
 }
 
-export const ChatHistory: React.FC<HistoryProps> = ({ history, onClear, userName = '주인' }) => {
+export const ChatHistory: React.FC<HistoryProps> = ({
+  history,
+  onClear,
+  userName = '주인',
+  language = 'ko',
+}) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const t = translations[language];
 
   // Auto-scroll to bottom when new history items arrive
   useEffect(() => {
@@ -24,7 +33,7 @@ export const ChatHistory: React.FC<HistoryProps> = ({ history, onClear, userName
   if (history.length === 0) {
     return (
       <div className="history-empty">
-        대화 기록이 없습니다. 딸기와 초코에게 말을 걸거나 머리를 쓰다듬어 보세요!
+        {t.emptyHistory}
       </div>
     );
   }
@@ -32,10 +41,10 @@ export const ChatHistory: React.FC<HistoryProps> = ({ history, onClear, userName
   return (
     <div className="chat-history-container">
       <div className="chat-history-header">
-        <span className="chat-history-title">대화 기록 ({history.length})</span>
-        <button className="btn-clear-history" onClick={onClear} title="기록 전체 삭제">
+        <span className="chat-history-title">{t.chatHistory} ({history.length})</span>
+        <button className="btn-clear-history" onClick={onClear} title={t.clearHistoryTitle}>
           <Trash2 size={14} style={{ marginRight: '4px' }} />
-          지우기
+          {t.clear}
         </button>
       </div>
 
@@ -44,13 +53,13 @@ export const ChatHistory: React.FC<HistoryProps> = ({ history, onClear, userName
           const isStrawberry = line.character === 'strawberry';
           const isUser = line.character === 'user';
           
-          let speakerTag = `👤 ${userName}`;
+          let speakerTag = `👤 ${getEffectiveUserName(userName, language)}`;
           let bubbleClass = 'bubble-user';
           if (isStrawberry) {
-            speakerTag = '🍓 딸기';
+            speakerTag = `🍓 ${t.charStrawberry}`;
             bubbleClass = 'bubble-strawberry';
           } else if (line.character === 'choco') {
-            speakerTag = '🍫 초코';
+            speakerTag = `🍫 ${t.charChoco}`;
             bubbleClass = 'bubble-choco';
           }
 

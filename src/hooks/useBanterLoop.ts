@@ -10,6 +10,7 @@ export function useBanterLoop() {
     banterInterval: StorageService.getBanterInterval(),
     userName: StorageService.getUserName(),
     maxHistoryLimit: StorageService.getMaxHistoryLimit(),
+    language: StorageService.getLanguage(),
   }));
 
   // History & dialogue state
@@ -66,7 +67,7 @@ export function useBanterLoop() {
     setIsLoading(true);
     setApiError(null);
     try {
-      const dialogue = await GeminiService.handleEvent(event);
+      const dialogue = await GeminiService.handleEvent(event, settings.language);
       playDialogue(dialogue);
     } catch (err: any) {
       console.error('Failed to trigger dialogue event:', err);
@@ -74,7 +75,7 @@ export function useBanterLoop() {
     } finally {
       setIsLoading(false);
     }
-  }, [playDialogue]);
+  }, [playDialogue, settings.language]);
 
   // Setup the self-healing interval timer
   const resetBanterTimer = useCallback(() => {
@@ -135,7 +136,7 @@ export function useBanterLoop() {
 
     // 2. Fetch characters' reactions
     try {
-      const dialogue = await GeminiService.handleUserMessage(text);
+      const dialogue = await GeminiService.handleUserMessage(text, settings.language);
       playDialogue(dialogue);
     } catch (err: any) {
       console.error('Failed to send message:', err);
@@ -143,7 +144,7 @@ export function useBanterLoop() {
     } finally {
       setIsLoading(false);
     }
-  }, [isLoading, playDialogue]);
+  }, [isLoading, playDialogue, settings.language]);
 
   // Action: Touch gesture trigger
   const triggerTouch = useCallback(async (character: 'strawberry' | 'choco', gesture: 'tap' | 'poke' | 'pet') => {
@@ -157,11 +158,12 @@ export function useBanterLoop() {
   }, [triggerBanter]);
 
   // Settings modification
-  const saveSettings = useCallback((apiKey: string, banterInterval: number, userName: string, maxHistoryLimit: number) => {
+  const saveSettings = useCallback((apiKey: string, banterInterval: number, userName: string, maxHistoryLimit: number, language: 'ko' | 'en') => {
     StorageService.setApiKey(apiKey);
     StorageService.setBanterInterval(banterInterval);
     StorageService.setUserName(userName);
     StorageService.setMaxHistoryLimit(maxHistoryLimit);
+    StorageService.setLanguage(language);
     
     // Trim current chat history state and localStorage when saved
     setChatHistory((prev) => {
@@ -170,7 +172,7 @@ export function useBanterLoop() {
       return trimmed;
     });
 
-    setSettings({ apiKey, banterInterval, userName, maxHistoryLimit });
+    setSettings({ apiKey, banterInterval, userName, maxHistoryLimit, language });
     setApiError(null);
   }, []);
 

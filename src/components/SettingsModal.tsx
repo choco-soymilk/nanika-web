@@ -1,12 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { AppSettings } from '../types';
-import { X, Eye, EyeOff, Key, ShieldAlert, Sparkles, Timer, User, MessageSquare } from 'lucide-react';
+import { X, Eye, EyeOff, Key, ShieldAlert, Sparkles, Timer, User, MessageSquare, Languages } from 'lucide-react';
+import { translations } from '../data/translations';
+import { getEffectiveUserName } from '../services/storage';
 
 interface SettingsProps {
   settings: AppSettings;
   isOpen: boolean;
   onClose: () => void;
-  onSave: (apiKey: string, banterInterval: number, userName: string, maxHistoryLimit: number) => void;
+  onSave: (apiKey: string, banterInterval: number, userName: string, maxHistoryLimit: number, language: 'ko' | 'en') => void;
 }
 
 export const SettingsModal: React.FC<SettingsProps> = ({
@@ -17,25 +19,48 @@ export const SettingsModal: React.FC<SettingsProps> = ({
 }) => {
   const [apiKey, setApiKey] = useState(settings.apiKey);
   const [banterInterval, setBanterInterval] = useState(settings.banterInterval);
-  const [userName, setUserName] = useState(settings.userName || '주인');
+  const [userName, setUserName] = useState(settings.userName);
   const [maxHistoryLimit, setMaxHistoryLimit] = useState(settings.maxHistoryLimit || 200);
+  const [language, setLanguage] = useState<'ko' | 'en'>(settings.language || 'ko');
   const [showKey, setShowKey] = useState(false);
+
+  // Sync state with settings when it changes or when modal is opened
+  useEffect(() => {
+    if (isOpen) {
+      setApiKey(settings.apiKey);
+      setBanterInterval(settings.banterInterval);
+      setUserName(getEffectiveUserName(settings.userName, settings.language));
+      setMaxHistoryLimit(settings.maxHistoryLimit);
+      setLanguage(settings.language);
+    }
+  }, [isOpen, settings]);
+
+  const handleLanguageChange = (lang: 'ko' | 'en') => {
+    setLanguage(lang);
+    const trimmed = userName.trim();
+    if (!trimmed || trimmed === '주인' || trimmed === '주인님' || trimmed === 'Master' || trimmed === 'master') {
+      setUserName(lang === 'ko' ? '주인' : 'Master');
+    }
+  };
 
   if (!isOpen) return null;
 
+  const t = translations[language];
+
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    onSave(apiKey.trim(), banterInterval, userName.trim() || '주인', maxHistoryLimit);
+    const defaultName = language === 'ko' ? '주인' : 'Master';
+    onSave(apiKey.trim(), banterInterval, userName.trim() || defaultName, maxHistoryLimit, language);
     onClose();
   };
 
   const intervals = [
-    { label: '끔', value: 0 },
-    { label: '1분', value: 60 },
-    { label: '2분', value: 120 },
-    { label: '3분', value: 180 },
-    { label: '5분', value: 300 },
-    { label: '10분', value: 600 },
+    { label: t.intervals.off, value: 0 },
+    { label: t.intervals.min1, value: 60 },
+    { label: t.intervals.min2, value: 120 },
+    { label: t.intervals.min3, value: 180 },
+    { label: t.intervals.min5, value: 300 },
+    { label: t.intervals.min10, value: 600 },
   ];
 
   return (
@@ -44,24 +69,47 @@ export const SettingsModal: React.FC<SettingsProps> = ({
         <div className="modal-header">
           <div className="modal-title">
             <Sparkles size={18} className="icon-gold" style={{ marginRight: '6px' }} />
-            설정 및 API 연동
+            {t.settingsTitle}
           </div>
-          <button className="modal-close-btn" onClick={onClose}>
+          <button className="modal-close-btn" onClick={onClose} aria-label={t.close}>
             <X size={18} />
           </button>
         </div>
 
         <form onSubmit={handleSave} className="modal-form">
+          {/* Language Selection */}
+          <div className="form-section">
+            <label className="form-label">
+              <Languages size={14} className="icon-purple" style={{ marginRight: '4px' }} />
+              {t.languageLabel}
+            </label>
+            <div className="interval-grid">
+              {(['ko', 'en'] as const).map((lang) => (
+                <button
+                  type="button"
+                  key={lang}
+                  className={`interval-chip ${language === lang ? 'active' : ''}`}
+                  onClick={() => handleLanguageChange(lang)}
+                >
+                  {lang === 'ko' ? '한국어' : 'English'}
+                </button>
+              ))}
+            </div>
+            <div className="form-hint">
+              {t.languageHint}
+            </div>
+          </div>
+
           <div className="form-section">
             <label className="form-label">
               <Key size={14} className="icon-purple" style={{ marginRight: '4px' }} />
-              Google AI Studio (Gemini) API Key
+              {t.apiKeyLabel}
             </label>
             <div className="input-with-icon">
               <input
                 type={showKey ? 'text' : 'password'}
                 className="input-text"
-                placeholder="AIzaSy... API 키를 입력하세요"
+                placeholder={t.apiKeyPlaceholder}
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
                 autoComplete="off"
@@ -74,10 +122,10 @@ export const SettingsModal: React.FC<SettingsProps> = ({
                 {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
-            <div className="form-hint">
+            <div className="form-hint" style={{ display: 'flex', alignItems: 'flex-start' }}>
               <ShieldAlert size={12} style={{ marginRight: '4px', flexShrink: 0, marginTop: '2px' }} />
               <span>
-                입력하신 API Key는 외부 서버로 절대 전송되지 않으며, 브라우저의 <strong>localStorage</strong>에만 안전하게 저장됩니다.
+                {t.apiKeyHint}
               </span>
             </div>
           </div>
@@ -85,25 +133,25 @@ export const SettingsModal: React.FC<SettingsProps> = ({
           <div className="form-section">
             <label className="form-label">
               <User size={14} className="icon-purple" style={{ marginRight: '4px' }} />
-              사용자 이름 (호칭)
+              {t.userNameLabel}
             </label>
             <input
               type="text"
               className="input-text"
-              placeholder="주인"
+              placeholder={t.userNamePlaceholder}
               value={userName}
               onChange={(e) => setUserName(e.target.value)}
               maxLength={15}
             />
             <div className="form-hint">
-              캐릭터들이 대화 속에서 사용자를 부를 때 사용하는 호칭입니다. (기본값: 주인)
+              {t.userNameHint}
             </div>
           </div>
 
           <div className="form-section">
             <label className="form-label">
               <Timer size={14} className="icon-purple" style={{ marginRight: '4px' }} />
-              화면 자동 만담 주기
+              {t.banterIntervalLabel}
             </label>
             <div className="interval-grid">
               {intervals.map((item) => (
@@ -118,14 +166,14 @@ export const SettingsModal: React.FC<SettingsProps> = ({
               ))}
             </div>
             <div className="form-hint">
-              앱 화면이 켜져 있는 동안 해당 주기마다 캐릭터들이 서로 대화를 나눕니다.
+              {t.banterIntervalHint}
             </div>
           </div>
 
           <div className="form-section">
             <label className="form-label">
               <MessageSquare size={14} className="icon-purple" style={{ marginRight: '4px' }} />
-              최대 대화 기록 저장 개수
+              {t.maxHistoryLimitLabel}
             </label>
             <div className="interval-grid">
               {[100, 200, 300].map((limit) => (
@@ -135,21 +183,21 @@ export const SettingsModal: React.FC<SettingsProps> = ({
                   className={`interval-chip ${maxHistoryLimit === limit ? 'active' : ''}`}
                   onClick={() => setMaxHistoryLimit(limit)}
                 >
-                  {limit}개
+                  {limit}{t.historyLimitUnit}
                 </button>
               ))}
             </div>
             <div className="form-hint">
-              대화 내역이 너무 많이 쌓이는 것을 방지하기 위해 지정된 개수만큼만 오래된 순으로 남기고 자동 삭제합니다.
+              {t.maxHistoryLimitHint}
             </div>
           </div>
 
           <div className="modal-actions">
             <button type="button" className="btn-secondary flex-1" onClick={onClose}>
-              취소
+              {t.cancel}
             </button>
             <button type="submit" className="btn-primary flex-1">
-              설정 저장
+              {t.saveSettings}
             </button>
           </div>
         </form>
