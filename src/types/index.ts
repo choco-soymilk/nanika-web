@@ -21,6 +21,7 @@ export interface DialogueLine {
   text: string;
   emotion: Emotion;
   timestamp?: number; // Optional timestamp for history tracking
+  speakerName?: string; // Optional custom name for Ukagaka characters
 }
 
 export type MockEventType =

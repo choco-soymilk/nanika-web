@@ -6,6 +6,7 @@ interface BubbleProps {
   emotion: Emotion;
   isActive: boolean;
   side: 'left' | 'right';
+  children?: React.ReactNode;
 }
 
 const EMOTION_COLORS: Record<Emotion, string> = {
@@ -25,8 +26,8 @@ const EMOTION_COLORS: Record<Emotion, string> = {
   flustered:     '#E84393',
 };
 
-export const SpeechBubble: React.FC<BubbleProps> = ({ text, emotion, isActive, side }) => {
-  if (!text) return null;
+export const SpeechBubble: React.FC<BubbleProps> = ({ text, emotion, isActive, side, children }) => {
+  if (!text && !children) return null;
 
   const accentColor = EMOTION_COLORS[emotion] || '#FFFFFF';
 
@@ -45,6 +46,7 @@ export const SpeechBubble: React.FC<BubbleProps> = ({ text, emotion, isActive, s
             ▌
           </span>
         )}
+        {children}
       </div>
       <div
         className={`speech-bubble-tail speech-bubble-tail-${side}`}

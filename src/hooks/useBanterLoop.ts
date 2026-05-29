@@ -4,6 +4,8 @@ import { StorageService } from '../services/storage';
 import { GeminiService } from '../services/gemini';
 
 export function useBanterLoop() {
+  const [isUkagakaActive, setIsUkagakaActive] = useState(false);
+  
   // Config state
   const [settings, setSettings] = useState<AppSettings>(() => ({
     apiKey: StorageService.getApiKey(),
@@ -84,8 +86,8 @@ export function useBanterLoop() {
       timerRef.current = null;
     }
 
-    if (settings.banterInterval <= 0) {
-      console.log('[BanterLoop] Interval is disabled.');
+    if (settings.banterInterval <= 0 || isUkagakaActive) {
+      console.log('[BanterLoop] Interval is disabled or Ukagaka is active.');
       return;
     }
 
@@ -97,7 +99,7 @@ export function useBanterLoop() {
         triggerBanter('random');
       }
     }, settings.banterInterval * 1000);
-  }, [settings.banterInterval, triggerBanter]);
+  }, [settings.banterInterval, triggerBanter, isUkagakaActive]);
 
   // Restart the timer when interval settings or active states change
   useEffect(() => {
@@ -209,5 +211,6 @@ export function useBanterLoop() {
     clearHistory,
     onBanterComplete,
     onBanterLineComplete,
+    setIsUkagakaActive,
   };
 }

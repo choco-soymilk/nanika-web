@@ -43,6 +43,11 @@ export const translations = {
     historyLimitUnit: '개',
     thinkingBubbleStrawberry: '생각 중...',
     thinkingBubbleChoco: '...',
+    importNarLabel: '우카가카 캐릭터 불러오기 (.nar)',
+    importNarHint: '우카가카 캐릭터 패키지(.nar 또는 .zip) 파일을 업로드합니다.',
+    activeUkagakaLabel: '현재 활성화된 우카가카',
+    unloadUkagaka: '우카가카 내리기',
+    emptyHistoryUkagaka: '임포트된 우카가카가 구동 중입니다! 마스코트를 더블클릭하거나 쓰다듬어보세요.',
   },
   en: {
     appTitle: 'Nanipoke',
@@ -88,5 +93,10 @@ export const translations = {
     historyLimitUnit: ' items',
     thinkingBubbleStrawberry: 'Thinking...',
     thinkingBubbleChoco: '...',
+    importNarLabel: 'Load Ukagaka Character (.nar)',
+    importNarHint: 'Upload a Ukagaka character package (.nar or .zip) file.',
+    activeUkagakaLabel: 'Active Ukagaka',
+    unloadUkagaka: 'Unload Ukagaka',
+    emptyHistoryUkagaka: 'Imported Ukagaka is running! Try double clicking the mascot or petting it.',
   }
 };

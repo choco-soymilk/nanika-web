@@ -439,7 +439,7 @@ body {
   border-radius: 16px;
   border: 1.5px solid #fff;
   padding: 12px 14px;
-  max-width: 175px;
+  max-width: 200px;
   position: relative;
   animation: scaleIn 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
@@ -459,7 +459,9 @@ body {
   font-size: 12px;
   line-height: 1.5;
   font-weight: 500;
-  word-break: keep-all;
+  word-break: break-all;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
 }
 
 .speech-bubble-cursor {

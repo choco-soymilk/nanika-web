@@ -9,6 +9,8 @@ interface HistoryProps {
   onClear: () => void;
   userName?: string;
   language?: 'ko' | 'en';
+  emptyMessage?: string;
+  isUkagakaActive?: boolean;
 }
 
 export const ChatHistory: React.FC<HistoryProps> = ({
@@ -16,6 +18,8 @@ export const ChatHistory: React.FC<HistoryProps> = ({
   onClear,
   userName = '주인',
   language = 'ko',
+  emptyMessage,
+  isUkagakaActive = false,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const t = translations[language];
@@ -33,7 +37,7 @@ export const ChatHistory: React.FC<HistoryProps> = ({
   if (history.length === 0) {
     return (
       <div className="history-empty">
-        {t.emptyHistory}
+        {emptyMessage || t.emptyHistory}
       </div>
     );
   }
@@ -56,10 +60,12 @@ export const ChatHistory: React.FC<HistoryProps> = ({
           let speakerTag = `👤 ${getEffectiveUserName(userName, language)}`;
           let bubbleClass = 'bubble-user';
           if (isStrawberry) {
-            speakerTag = `🍓 ${t.charStrawberry}`;
+            const prefix = isUkagakaActive ? '🌸' : '🍓';
+            speakerTag = `${prefix} ${line.speakerName || t.charStrawberry}`;
             bubbleClass = 'bubble-strawberry';
           } else if (line.character === 'choco') {
-            speakerTag = `🍫 ${t.charChoco}`;
+            const prefix = isUkagakaActive ? '🍀' : '🍫';
+            speakerTag = `${prefix} ${line.speakerName || t.charChoco}`;
             bubbleClass = 'bubble-choco';
           }
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import type { AppSettings } from '../types';
-import { X, Eye, EyeOff, Key, ShieldAlert, Sparkles, Timer, User, MessageSquare, Languages } from 'lucide-react';
+import { X, Eye, EyeOff, Key, ShieldAlert, Sparkles, Timer, User, MessageSquare, Languages, Upload, Trash2 } from 'lucide-react';
 import { translations } from '../data/translations';
 import { getEffectiveUserName } from '../services/storage';
 
@@ -9,6 +9,9 @@ interface SettingsProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (apiKey: string, banterInterval: number, userName: string, maxHistoryLimit: number, language: 'ko' | 'en') => void;
+  onImportNar?: (file: File) => void;
+  activeUkagakaName?: string;
+  onResetUkagaka?: () => void;
 }
 
 export const SettingsModal: React.FC<SettingsProps> = ({
@@ -16,6 +19,9 @@ export const SettingsModal: React.FC<SettingsProps> = ({
   isOpen,
   onClose,
   onSave,
+  onImportNar,
+  activeUkagakaName,
+  onResetUkagaka,
 }) => {
   const [apiKey, setApiKey] = useState(settings.apiKey);
   const [banterInterval, setBanterInterval] = useState(settings.banterInterval);
@@ -190,6 +196,77 @@ export const SettingsModal: React.FC<SettingsProps> = ({
             <div className="form-hint">
               {t.maxHistoryLimitHint}
             </div>
+          </div>
+
+          {/* Ukagaka NAR Import Section */}
+          <div className="form-section" style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '16px', marginTop: '16px' }}>
+            <label className="form-label">
+              <Upload size={14} className="icon-purple" style={{ marginRight: '4px' }} />
+              {t.importNarLabel}
+            </label>
+            
+            {activeUkagakaName ? (
+              <div className="active-ukagaka-banner" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'rgba(139, 92, 246, 0.1)', padding: '10px 12px', borderRadius: '8px', border: '1px solid rgba(139, 92, 246, 0.2)', marginBottom: '8px', gap: '8px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+                  <span style={{ fontSize: '10px', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t.activeUkagakaLabel}</span>
+                  <span style={{ fontWeight: 'bold', fontSize: '13px', color: '#a78bfa', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{activeUkagakaName}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={onResetUkagaka}
+                  className="btn-unload"
+                  style={{ display: 'flex', alignItems: 'center', backgroundColor: 'rgba(239, 68, 68, 0.15)', color: '#f87171', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '6px', padding: '6px 10px', fontSize: '11px', cursor: 'pointer', gap: '4px', whiteSpace: 'nowrap', transition: 'all 0.2s' }}
+                  onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.25)'}
+                  onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.15)'}
+                >
+                  <Trash2 size={12} />
+                  {t.unloadUkagaka}
+                </button>
+              </div>
+            ) : (
+              <div className="file-upload-container" style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <input
+                  type="file"
+                  accept=".nar,.zip"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file && onImportNar) {
+                      onImportNar(file);
+                    }
+                  }}
+                  style={{ display: 'none' }}
+                  id="nar-file-input"
+                />
+                <label
+                  htmlFor="nar-file-input"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    border: '2px dashed rgba(139, 92, 246, 0.25)',
+                    borderRadius: '8px',
+                    padding: '14px',
+                    cursor: 'pointer',
+                    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                    transition: 'all 0.2s',
+                    textAlign: 'center',
+                    fontSize: '12px'
+                  }}
+                  onMouseOver={(e) => e.currentTarget.style.borderColor = 'rgba(139, 92, 246, 0.5)'}
+                  onMouseOut={(e) => e.currentTarget.style.borderColor = 'rgba(139, 92, 246, 0.25)'}
+                >
+                  <Upload size={14} />
+                  <span>{t.importNarLabel}</span>
+                </label>
+                
+
+
+                <div className="form-hint">
+                  {t.importNarHint}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="modal-actions">
