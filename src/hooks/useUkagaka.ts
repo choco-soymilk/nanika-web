@@ -210,11 +210,8 @@ export function useUkagaka(
             }
           }
 
-          // Trigger standard second change event checks
-          const script = activeRunner.trigger('OnSecondChange', [String(secondsCount)]);
-          if (script) {
-            playScript(script);
-          }
+          // OnSecondChange is intentionally not triggered here
+          // (ddalgi ghost doesn't use it and it creates empty bubbles)
         }
       }, 1000);
 

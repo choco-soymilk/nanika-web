@@ -56,7 +56,8 @@ export class NarExtractor {
     const filesToTry = [descriptFile, installFile].filter(Boolean);
 
     const parseCharsetLine = (text: string): string | null => {
-      const lines = text.split(/\r?\n/);
+      const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      const lines = normalized.split('\n');
       for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('#')) continue;
@@ -340,7 +341,8 @@ export class NarExtractor {
 
   private static parseInstallTxt(content: string): NarMetadata {
     const metadata: NarMetadata = {};
-    const lines = content.split(/\r?\n/);
+    const normalized = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const lines = normalized.split('\n');
 
     for (const line of lines) {
       const trimmed = line.trim();

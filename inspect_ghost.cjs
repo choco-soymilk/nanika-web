@@ -3,7 +3,7 @@ const JSZip = require('jszip');
 const { TextDecoder } = require('util');
 
 async function inspect() {
-  const filePath = 'C:\\Users\\choms\\OneDrive\\Escritorio\\app development\\ghost\\hortense.nar';
+  const filePath = 'C:\\Users\\choms\\OneDrive\\Escritorio\\app development\\ghost\\ddalgi-choms84.nar';
   console.log('Reading file:', filePath);
   
   if (!fs.existsSync(filePath)) {
@@ -45,6 +45,12 @@ async function inspect() {
     } catch (e) {
       console.log('Shift-JIS decode failed');
     }
+    console.log('\ndescript.txt in euc-kr:');
+    try {
+      console.log(new TextDecoder('euc-kr').decode(arrayBuffer).slice(0, 500));
+    } catch (e) {
+      console.log('EUC-KR decode failed');
+    }
   }
 
   // Find other .txt / .dic files
@@ -57,20 +63,19 @@ async function inspect() {
   console.log('\nText files under ghost/master/:');
   console.log(textFiles);
 
-  // Let's print a sample of some dictionaries to see their format
-  for (const path of textFiles.slice(0, 5)) {
+  // Search all files for boot events
+  for (const path of textFiles) {
     const file = zip.file(path);
+    if (!file) continue;
     const arrayBuffer = await file.async('nodebuffer');
-    // Try shift-jis first
-    let decoded = '';
-    try {
-      decoded = new TextDecoder('shift-jis').decode(arrayBuffer);
-    } catch (e) {
-      decoded = new TextDecoder('utf-8').decode(arrayBuffer);
-    }
-    console.log(`\n--- Sample from ${path} (decrypted/decoded) ---`);
-    console.log(decoded.slice(0, 800));
-    console.log('-----------------------------------------------\n');
+    const content = new TextDecoder('euc-kr').decode(arrayBuffer);
+    const lines = content.split(/\r?\n/);
+    lines.forEach((line, index) => {
+      const lower = line.toLowerCase();
+      if (lower.includes('onboot') || lower.includes('onfirstboot') || lower.includes('boot') || lower.includes('firstboot')) {
+        console.log(`[${path}:${index + 1}] ${line}`);
+      }
+    });
   }
 }
 

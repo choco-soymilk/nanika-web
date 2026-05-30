@@ -296,10 +296,17 @@ export class SakuraScriptParser {
           stateCallback({ ...state });
           break;
 
-        case 'surface':
-          state.surfaces[state.scope] = cmd.value;
+        case 'surface': {
+          // In Ukagaka, scope 1 (Kero) surfaces are offset by 10:
+          // \1\s[0] → shell surface 10, \1\s[1] → shell surface 11, etc.
+          // Scope 0 (Sakura) uses surface IDs as-is.
+          const surfaceValue = state.scope === 1 && cmd.value < 10
+            ? 10 + cmd.value
+            : cmd.value;
+          state.surfaces[state.scope] = surfaceValue;
           stateCallback({ ...state });
           break;
+        }
 
         case 'wait':
           await sleep(cmd.value);

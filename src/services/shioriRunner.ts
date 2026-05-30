@@ -22,6 +22,16 @@ export class ShioriRunner {
   private rawKawari: Record<string, string[]> = {};
   // Random talk list (from aitalk.txt)
   private randomTalks: string[] = [];
+  // Misaka events map (with condition structures)
+  private misakaEvents: Record<string, {
+    script: string;
+    conditionStr?: string;
+    condition?: {
+      refIndex: number;
+      refValue: string;
+      isNot?: boolean;
+    };
+  }[]> = {};
 
   private userName = 'Master';
   private strokeCounts: Record<string, number> = {};
@@ -100,14 +110,27 @@ export class ShioriRunner {
 
       // Parse as Kawari dictionary
       this.parseKawari(content);
+
+      // Parse as Misaka dictionary
+      this.parseMisaka(content);
     }
 
     // Merge standard talk events into randomTalks
-    const talkEvents = ['OnAiTalk', 'Aitalk', 'OnAitalk', 'sentence', 'randomtalk'];
+    const talkEvents = [
+      'OnAiTalk', 'Aitalk', 'OnAitalk', 'sentence', 'randomtalk',
+      '_ontalkcore', '_ontalk', 'ontalk', 'ontalkcore'
+    ];
     for (const event of talkEvents) {
       if (this.events[event]) {
         this.randomTalks.push(...this.events[event]);
         delete this.events[event];
+      }
+
+      const misakaKey = event.toLowerCase();
+      if (this.misakaEvents[misakaKey]) {
+        const scripts = this.misakaEvents[misakaKey].map(m => m.script);
+        this.randomTalks.push(...scripts);
+        delete this.misakaEvents[misakaKey];
       }
     }
 
@@ -121,7 +144,7 @@ export class ShioriRunner {
    * Resolves ${VarName} references in all event scripts using the rawKawari map.
    * Runs up to 3 expansion passes to handle nested references.
    */
-  private expandSingleKawariScript(script: string): string {
+  private expandSingleKawariScript(script: string, refParts: string[] = []): string {
     const MAX_RESULT_LENGTH = 1000;
     // Allow slightly higher depth because variables can contain nested references
     const MAX_DEPTH = 10;
@@ -130,17 +153,24 @@ export class ShioriRunner {
       if (depth > MAX_DEPTH) return str;
       if (str.length > MAX_RESULT_LENGTH) return str.substring(0, MAX_RESULT_LENGTH);
 
-      return str.replace(/\$\{([A-Za-z0-9_.\-]+)\}/g, (_match, varName) => {
+      // Match ${varName} and {$varName} where varName can contain any Unicode non-whitespace chars
+      return str.replace(/(?:\$\{([^{}\s]+)\}|\{\$([^{}\s]+)\})/g, (_match, varName1, varName2) => {
+        const varName = varName1 || varName2;
+        // Skip if this looks like an assignment or control statement
+        if (/[=+\-!<>]/.test(varName)) return '';
         const lower = varName.toLowerCase();
 
-        const alternatives = this.rawKawari[lower] || this.rawKawari[varName];
+        const alternatives = this.getEventScripts(lower, refParts);
         if (alternatives && alternatives.length > 0) {
           const count = expandingVars[lower] || 0;
           let val: string;
 
           if (count >= 2) {
             // Force select a base case that doesn't reference itself
-            const baseCases = alternatives.filter(alt => !alt.toLowerCase().includes(`\${${lower}}`));
+            const baseCases = alternatives.filter(alt => {
+              const altLower = alt.toLowerCase();
+              return !altLower.includes(`\${${lower}}`) && !altLower.includes(`{$${lower}}`);
+            });
             if (baseCases.length > 0) {
               val = baseCases[Math.floor(Math.random() * baseCases.length)];
             } else {
@@ -446,7 +476,57 @@ export class ShioriRunner {
     }
   }
 
-  private getEventScripts(key: string): string[] {
+  private getMisakaMatchedScripts(key: string, refParts: string[]): string[] {
+    const lowerKey = key.toLowerCase();
+    const candidates = this.misakaEvents[lowerKey];
+    if (!candidates || candidates.length === 0) return [];
+
+    const matched: string[] = [];
+    for (const item of candidates) {
+      if (item.conditionStr) {
+        if (this.evaluateMisakaCondition(item.conditionStr, refParts, key)) {
+          matched.push(item.script);
+        }
+        continue;
+      }
+
+      if (!item.condition) {
+        matched.push(item.script);
+        continue;
+      }
+
+      const { refIndex, refValue, isNot } = item.condition;
+      let actualValue = '';
+      const isMouseEvent = lowerKey.startsWith('onmouse') || lowerKey === 'onmousemove';
+
+      if (isMouseEvent && refParts.length === 4) {
+        if (refIndex === 3) actualValue = refParts[2]; // scope
+        else if (refIndex === 4) actualValue = refParts[3]; // label
+        else actualValue = refParts[refIndex] || '';
+      } else {
+        actualValue = refParts[refIndex] || '';
+      }
+
+      const isMatch = actualValue.toLowerCase() === refValue.toLowerCase();
+      if (isNot ? !isMatch : isMatch) {
+        matched.push(item.script);
+      }
+    }
+    return matched;
+  }
+
+  private getEventScripts(key: string, refParts: string[] = []): string[] {
+    const searchKeys = [
+      key.toLowerCase(),
+      `event.${key.toLowerCase()}`
+    ];
+    for (const searchKey of searchKeys) {
+      const misakaScripts = this.getMisakaMatchedScripts(searchKey, refParts);
+      if (misakaScripts.length > 0) {
+        return misakaScripts;
+      }
+    }
+
     const exact = this.events[key];
     if (exact && exact.length > 0) return exact;
     
@@ -476,7 +556,7 @@ export class ShioriRunner {
     let scriptList: string[] = [];
 
     if (event === 'OnSecondChange') {
-      scriptList = this.getEventScripts('OnSecondChange');
+      scriptList = this.getEventScripts('OnSecondChange', refParts);
     } else if (event === 'OnRandomTalk') {
       scriptList = this.randomTalks;
     } else if (event === 'OnBoot') {
@@ -496,22 +576,22 @@ export class ShioriRunner {
       }
 
       for (const cat of categories) {
-        let scripts = this.getEventScripts(`another.talkbootup${cat}`);
+        let scripts = this.getEventScripts(`another.talkbootup${cat}`, refParts);
         if (scripts.length > 0) {
           scriptList = scripts;
           break;
         }
-        scripts = this.getEventScripts(`talkbootup${cat}`);
+        scripts = this.getEventScripts(`talkbootup${cat}`, refParts);
         if (scripts.length > 0) {
           scriptList = scripts;
           break;
         }
-        scripts = this.getEventScripts(`ntalkbootup${cat}`);
+        scripts = this.getEventScripts(`ntalkbootup${cat}`, refParts);
         if (scripts.length > 0) {
           scriptList = scripts;
           break;
         }
-        scripts = this.getEventScripts(`n.talkbootup${cat}`);
+        scripts = this.getEventScripts(`n.talkbootup${cat}`, refParts);
         if (scripts.length > 0) {
           scriptList = scripts;
           break;
@@ -519,19 +599,19 @@ export class ShioriRunner {
       }
 
       if (scriptList.length === 0) {
-        scriptList = this.getEventScripts('talkbootup');
+        scriptList = this.getEventScripts('talkbootup', refParts);
       }
       if (scriptList.length === 0) {
-        scriptList = this.getEventScripts('ntalkbootup');
+        scriptList = this.getEventScripts('ntalkbootup', refParts);
       }
       if (scriptList.length === 0) {
-        scriptList = this.getEventScripts('another.talkbootup');
+        scriptList = this.getEventScripts('another.talkbootup', refParts);
       }
       if (scriptList.length === 0) {
-        scriptList = this.getEventScripts('talkfirstboot');
+        scriptList = this.getEventScripts('talkfirstboot', refParts);
       }
       if (scriptList.length === 0) {
-        scriptList = this.getEventScripts('OnBoot');
+        scriptList = this.getEventScripts('OnBoot', refParts);
       }
     } else if (event === 'OnClose') {
       // Close category time-based check
@@ -550,22 +630,22 @@ export class ShioriRunner {
       }
 
       for (const cat of categories) {
-        let scripts = this.getEventScripts(`another.talkclose${cat}`);
+        let scripts = this.getEventScripts(`another.talkclose${cat}`, refParts);
         if (scripts.length > 0) {
           scriptList = scripts;
           break;
         }
-        scripts = this.getEventScripts(`talkclose${cat}`);
+        scripts = this.getEventScripts(`talkclose${cat}`, refParts);
         if (scripts.length > 0) {
           scriptList = scripts;
           break;
         }
-        scripts = this.getEventScripts(`ntalkclose${cat}`);
+        scripts = this.getEventScripts(`ntalkclose${cat}`, refParts);
         if (scripts.length > 0) {
           scriptList = scripts;
           break;
         }
-        scripts = this.getEventScripts(`n.talkclose${cat}`);
+        scripts = this.getEventScripts(`n.talkclose${cat}`, refParts);
         if (scripts.length > 0) {
           scriptList = scripts;
           break;
@@ -573,35 +653,68 @@ export class ShioriRunner {
       }
 
       if (scriptList.length === 0) {
-        scriptList = this.getEventScripts('talkclose');
+        scriptList = this.getEventScripts('talkclose', refParts);
       }
       if (scriptList.length === 0) {
-        scriptList = this.getEventScripts('ntalkclose');
+        scriptList = this.getEventScripts('ntalkclose', refParts);
       }
       if (scriptList.length === 0) {
-        scriptList = this.getEventScripts('another.talkclose');
+        scriptList = this.getEventScripts('another.talkclose', refParts);
       }
       if (scriptList.length === 0) {
-        scriptList = this.getEventScripts('OnClose');
+        scriptList = this.getEventScripts('OnClose', refParts);
       }
     } else if (event === 'OnFirstBoot') {
-      scriptList = this.getEventScripts('talkfirstboot');
+      scriptList = this.getEventScripts('talkfirstboot', refParts);
       if (scriptList.length === 0) {
-        scriptList = this.getEventScripts('another.talkfirstboot');
+        scriptList = this.getEventScripts('another.talkfirstboot', refParts);
       }
       if (scriptList.length === 0) {
-        scriptList = this.getEventScripts('OnFirstBoot');
+        scriptList = this.getEventScripts('OnFirstBoot', refParts);
       }
     } else if (event === 'OnUserInput') {
-      const customScripts = this.getEventScripts('OnUserInput');
-      const isFallback = customScripts.length > 0 && customScripts[0].includes('"(Reference0)"라고?');
-      if (this.randomTalks.length > 0 && (customScripts.length === 0 || isFallback)) {
-        scriptList = this.randomTalks;
+      const userInput = (refParts[0] || '').trim();
+      const lowerInput = userInput.toLowerCase();
+      let matchedScripts: string[] = [];
+
+      if (lowerInput) {
+        // 1. Direct 1:1 match with user word
+        matchedScripts = this.getEventScripts(lowerInput, refParts);
+
+        // 2. Keyword check: If no direct match, check if any of the dictionary keys (>=2 chars)
+        // are contained within the user's sentence.
+        if (matchedScripts.length === 0) {
+          const dictKeys = Object.keys(this.rawKawari).concat(Object.keys(this.events));
+          for (const key of dictKeys) {
+            const lowerKey = key.toLowerCase();
+            // Ignore system events and very short words
+            if (lowerKey.length >= 2 && !lowerKey.includes('on') && !lowerKey.includes('talk') && !lowerKey.includes('.')) {
+              if (lowerInput.includes(lowerKey)) {
+                console.log(`[ShioriRunner] Keyword matched: "${key}" from user input "${userInput}"`);
+                const scripts = this.getEventScripts(lowerKey, refParts);
+                if (scripts.length > 0) {
+                  matchedScripts = scripts;
+                  break;
+                }
+              }
+            }
+          }
+        }
+      }
+
+      if (matchedScripts.length > 0) {
+        scriptList = matchedScripts;
       } else {
-        scriptList = customScripts;
+        const customScripts = this.getEventScripts('OnUserInput', refParts);
+        const isFallback = customScripts.length > 0 && customScripts[0].includes('"(Reference0)"라고?');
+        if (this.randomTalks.length > 0 && (customScripts.length === 0 || isFallback)) {
+          scriptList = this.randomTalks;
+        } else {
+          scriptList = customScripts;
+        }
       }
     } else {
-      scriptList = this.getEventScripts(event);
+      scriptList = this.getEventScripts(event, refParts);
     }
 
     // Specific coordinate-based double click overrides
@@ -634,7 +747,7 @@ export class ShioriRunner {
       }
 
       for (const key of searchKeys) {
-        const scripts = this.getEventScripts(key);
+        const scripts = this.getEventScripts(key, refParts);
         if (scripts.length > 0) {
           scriptList = scripts;
           break;
@@ -672,7 +785,7 @@ export class ShioriRunner {
       }
 
       for (const key of searchKeys) {
-        const scripts = this.getEventScripts(key);
+        const scripts = this.getEventScripts(key, refParts);
         if (scripts.length > 0) {
           scriptList = scripts;
           break;
@@ -695,7 +808,7 @@ export class ShioriRunner {
 
       let targetKey = '';
       for (const key of coreKeys) {
-        const scripts = this.getEventScripts(key);
+        const scripts = this.getEventScripts(key, refParts);
         if (scripts.length > 0) {
           targetKey = key;
           scriptList = scripts;
@@ -713,7 +826,7 @@ export class ShioriRunner {
 
         let limit = 40; // Default stroke limit
         for (const limitKey of limitKeys) {
-          const limitScripts = this.getEventScripts(limitKey);
+          const limitScripts = this.getEventScripts(limitKey, refParts);
           if (limitScripts.length > 0) {
             const parsedLimit = parseInt(limitScripts[0], 10);
             if (!isNaN(parsedLimit)) {
@@ -728,7 +841,7 @@ export class ShioriRunner {
 
         const halfLimit = Math.floor(limit / 2);
         if (this.strokeCounts[countKey] === halfLimit && halfLimit > 0) {
-          const halfScripts = this.getEventScripts(`${targetKey}.half`);
+          const halfScripts = this.getEventScripts(`${targetKey}.half`, refParts);
           if (halfScripts.length > 0) {
             scriptList = halfScripts;
           } else {
@@ -747,7 +860,7 @@ export class ShioriRunner {
 
     if (event === 'OnChoiceSelect' && refParts.length > 0) {
       const choiceId = refParts[0];
-      const scripts = this.getEventScripts(choiceId);
+      const scripts = this.getEventScripts(choiceId, refParts);
       if (scripts.length > 0) {
         scriptList = scripts;
       } else {
@@ -767,9 +880,9 @@ export class ShioriRunner {
       ) {
         return '';
       }
-      scriptList = this.getEventScripts(event);
+      scriptList = this.getEventScripts(event, refParts);
       if (scriptList.length === 0) {
-        scriptList = this.getEventScripts('OnBoot');
+        scriptList = this.getEventScripts('OnBoot', refParts);
       }
     }
 
@@ -777,8 +890,21 @@ export class ShioriRunner {
     const randomIndex = Math.floor(Math.random() * scriptList.length);
     let script = scriptList[randomIndex] || '';
 
+    // If double-clicking character prompts a menu ($DoubleClickMenu), redirect to a random talk instead.
+    if (event === 'OnMouseDoubleClick' && script.toLowerCase().includes('doubleclickmenu')) {
+      console.log('[ShioriRunner] DoubleClickMenu detected, redirecting to OnRandomTalk');
+      const randomTalkList = this.randomTalks.length > 0 ? this.randomTalks : this.getEventScripts('OnRandomTalk', refParts);
+      if (randomTalkList.length > 0) {
+        const rIdx = Math.floor(Math.random() * randomTalkList.length);
+        script = randomTalkList[rIdx] || '';
+      } else {
+        // Default fallback if no talks are registered
+        script = this.isJapaneseGhost() ? '\\0\\s[0]なにか用？\\e' : '\\0\\s[0]무슨 일 있어?\\e';
+      }
+    }
+
     // Expand Kawari variables dynamically
-    script = this.expandSingleKawariScript(script);
+    script = this.expandSingleKawariScript(script, refParts);
 
     // Safety guard: if script is abnormally long it indicates a bad expansion — discard it
     if (script.length > 2000) {
@@ -789,18 +915,36 @@ export class ShioriRunner {
     // Apply template replacements
     script = this.replaceVariables(script, refParts);
 
+    // If script has no renderable dialogue text (only SakuraScript tags, whitespace, or is empty),
+    // discard it to prevent empty dialogue bubbles.
+    const renderableText = script
+      .replace(/\\[a-zA-Z_][^\\]*/g, '') // strip \tag sequences
+      .replace(/\s+/g, '')
+      .trim();
+    if (!renderableText) {
+      return '';
+    }
+
     return script;
   }
 
   private replaceVariables(script: string, refParts: string[] = []): string {
     let result = script;
     
-    // Replace references: (Reference0) or (ref0) or (Reference1)...
+    // Replace references: (Reference0) or (ref0) or (Reference1)... or {$reference(0)}
     refParts.forEach((part, idx) => {
       const refRegex = new RegExp(`\\(Reference${idx}\\)`, 'gi');
       result = result.replace(refRegex, part);
       const refRegexShort = new RegExp(`\\(ref${idx}\\)`, 'gi');
       result = result.replace(refRegexShort, part);
+      const refRegexMisaka = new RegExp(`\\{\\$reference\\(${idx}\\)\\}`, 'gi');
+      result = result.replace(refRegexMisaka, part);
+    });
+
+    // Also support general {$reference(N)} replacement for out of range indices
+    result = result.replace(/\{\$reference\((\d+)\)\}/gi, (_match, p1) => {
+      const idx = parseInt(p1, 10);
+      return refParts[idx] || '';
     });
     
     // Replace Satori / Ukagaka placeholders
@@ -810,6 +954,8 @@ export class ShioriRunner {
     result = result.replace(/\(주인\)/g, this.userName);
     result = result.replace(/\(사용자\)/g, this.userName);
     result = result.replace(/%username/gi, this.userName);
+    result = result.replace(/\{\$username\}/gi, this.userName);
+    result = result.replace(/\{\$user\}/gi, this.userName);
 
     // Replace character names
     result = result.replace(/\(sakuraname\)/gi, this.metadata.sakuraName);
@@ -817,6 +963,23 @@ export class ShioriRunner {
     result = result.replace(/%sakuraname/gi, this.metadata.sakuraName);
     result = result.replace(/%keroname/gi, this.metadata.keroName);
     result = result.replace(/%selfname/gi, this.metadata.sakuraName);
+    result = result.replace(/\{\$sakuraname\}/gi, this.metadata.sakuraName);
+    result = result.replace(/\{\$keroname\}/gi, this.metadata.keroName);
+    result = result.replace(/\{\$selfname\}/gi, this.metadata.sakuraName);
+
+    // System variables
+    const now = new Date();
+    result = result.replace(/(%year|\{\$year\})/gi, String(now.getFullYear()));
+    result = result.replace(/(%month|\{\$month\})/gi, String(now.getMonth() + 1));
+    result = result.replace(/(%day|\{\$day\})/gi, String(now.getDate()));
+    result = result.replace(/(%hour|\{\$hour\})/gi, String(now.getHours()));
+    result = result.replace(/(%minute|\{\$minute\})/gi, String(now.getMinutes()));
+    result = result.replace(/(%second|\{\$second\})/gi, String(now.getSeconds()));
+
+    const screenWidth = typeof window !== 'undefined' ? window.screen.width : 1920;
+    const screenHeight = typeof window !== 'undefined' ? window.screen.height : 1080;
+    result = result.replace(/%screenwidth/gi, String(screenWidth));
+    result = result.replace(/%screenheight/gi, String(screenHeight));
 
     // Replace Kawari-style ${variable} placeholders
     if (this.isJapaneseGhost()) {
@@ -829,9 +992,107 @@ export class ShioriRunner {
       result = result.replace(/\$\{unyu\}/gi, '우뉴');
     }
     result = result.replace(/\$\{0\}/gi, '');
-    // Strip any remaining unresolved Kawari vars (already expanded by expandKawariVars)
-    result = result.replace(/\$\{[A-Za-z0-9_.\-]+\}/gi, '');
 
+    // Strip Misaka control blocks using brace balancer (handles nested braces correctly)
+    result = this.stripMisakaControlBlocks(result);
+
+    // Strip control directives
+    result = result.replace(/;\s*nonoverlap\s*;?/gi, '');
+    result = result.replace(/;\s*AIOVERRIDE\s*;?/gi, '');
+
+    // Strip \\q and \\_q choice / menu blocks (not implemented, remove entirely)
+    // \\q[text,id] choice items and \\_q ... \\q mode delimiters
+    result = result.replace(/\\_q/gi, '');
+    result = result.replace(/\\q\[[^\]]*\]/gi, '');
+    result = result.replace(/\\q/gi, '');
+
+    // Strip any remaining unresolved Kawari / Misaka vars (Unicode-aware, no assignment)
+    result = result.replace(/\$\{[^{}\s]+\}/g, '');
+    result = result.replace(/\{\$[^{}\s]+\}/g, '');
+
+    // 1. Evaluate choice inline function: {$choice(A,B,...)} or $(choice,A,B,...)
+    const evaluateChoices = (text: string): string => {
+      // Misaka style {$choice(A,B,...)}
+      let temp = text.replace(/\{\$choice\(([^)]+)\)\}/gi, (_match, p1) => {
+        const choices = p1.split(/(?<!\\),/).map((c: string) => c.replace(/\\,/g, ',').trim());
+        return choices.length > 0 ? choices[Math.floor(Math.random() * choices.length)] : '';
+      });
+      // Kawari style $(choice,A,B,...)
+      temp = temp.replace(/\$\(choice\s*,?\s*([^)]+)\)/gi, (_match, p1) => {
+        const choices = p1.split(/(?<!\\),/).map((c: string) => c.replace(/\\,/g, ',').trim());
+        return choices.length > 0 ? choices[Math.floor(Math.random() * choices.length)] : '';
+      });
+      return temp;
+    };
+    result = evaluateChoices(result);
+
+    // 2. Resolve Korean postposition templates like [이;가], [은;는], [을;를], [과;와], [아;야], [이;]
+    const resolveKoreanPostpositions = (text: string): string => {
+      const hasBatchim = (char: string): boolean => {
+        if (!char) return false;
+        const code = char.charCodeAt(0) - 0xac00;
+        if (code < 0 || code > 11172) return false; // Not a Hangul syllable
+        return code % 28 !== 0; // If remainder is not 0, it has a final consonant (batchim)
+      };
+
+      return text.replace(/\[([^;\]]+);([^\]]*)\]/g, (_match, pos1, pos2, offset) => {
+        const beforeText = text.slice(0, offset);
+        // Remove SakuraScript tags and non-Hangul chars to find the nearest preceding Hangul syllable
+        const cleanBefore = beforeText
+          .replace(/\\[a-zA-Z0-9_!*?&~\-+^#@=[\]{}()]+/g, '')
+          .replace(/[^가-힣]/g, '');
+        
+        const lastChar = cleanBefore.slice(-1);
+        if (!lastChar) {
+          return pos2 || '';
+        }
+        return hasBatchim(lastChar) ? pos1 : (pos2 || '');
+      });
+    };
+    result = resolveKoreanPostpositions(result);
+
+    return result;
+  }
+
+  /**
+   * Removes Misaka SHIORI control blocks (assignments and counter ops) from a script string.
+   * Uses a brace balancer so nested braces like {$flag={$if(...)}} are fully removed.
+   * Leaves read-only variable references like {$username} for the caller to substitute.
+   */
+  private stripMisakaControlBlocks(script: string): string {
+    let result = '';
+    let i = 0;
+    const len = script.length;
+
+    while (i < len) {
+      // Look for {$ — possible start of a Misaka variable block
+      if (script[i] === '{' && i + 1 < len && script[i + 1] === '$') {
+        // Find matching closing brace with brace counter
+        let braceCount = 1;
+        let j = i + 1;
+        while (j < len && braceCount > 0) {
+          if (script[j] === '{') braceCount++;
+          else if (script[j] === '}') braceCount--;
+          j++;
+        }
+        const block = script.slice(i, j); // full {$...} block
+        // Extract inner content after {$
+        const inner = block.slice(2, -1); // strip leading '{$' and trailing '}'
+        // It's a control statement if the variable name is followed by an assignment or increment
+        const isControl = /^[A-Za-z0-9_.\-]+\s*[+\-]?=/.test(inner) ||
+                          /^[A-Za-z0-9_.\-]+\s*[+\-][+\-]/.test(inner) ||
+                          /^[A-Za-z0-9_.\-]+\s*[+\-]=/.test(inner);
+        if (isControl) {
+          i = j; // skip the entire block
+        } else {
+          result += script[i];
+          i++;
+        }
+      } else {
+        result += script[i];
+        i++;
+      }
+    }
     return result;
   }
 
@@ -840,7 +1101,8 @@ export class ShioriRunner {
   }
 
   private parseKawari(content: string) {
-    const lines = content.split(/\r?\n/);
+    const normalized = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const lines = normalized.split('\n');
     for (let line of lines) {
       const trimmedLine = line.trim();
       if (!trimmedLine || trimmedLine.startsWith('#') || trimmedLine.startsWith('//')) {
@@ -881,7 +1143,7 @@ export class ShioriRunner {
       for (const part of parts) {
         let scriptVal = part;
         // Strip leading control var patterns like ${countzero} that produce nothing
-        scriptVal = scriptVal.replace(/^\$\{[A-Za-z0-9_.\-]+\}/g, '').trim();
+        scriptVal = scriptVal.replace(/^\$\{[^{}\s]+\}/g, '').trim();
         if (!scriptVal) continue;
 
         if (!this.events[key]) {
@@ -894,6 +1156,272 @@ export class ShioriRunner {
           this.randomTalks.push(scriptVal);
         }
       }
+    }
+  }
+
+  private parseMisaka(content: string) {
+    const normalized = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    let i = 0;
+    const len = normalized.length;
+
+    while (i < len) {
+      // Skip comments
+      if (normalized.startsWith('//', i)) {
+        const nextNewline = normalized.indexOf('\n', i);
+        i = nextNewline !== -1 ? nextNewline + 1 : len;
+        continue;
+      }
+      if (normalized.startsWith('#', i)) {
+        const nextNewline = normalized.indexOf('\n', i);
+        i = nextNewline !== -1 ? nextNewline + 1 : len;
+        continue;
+      }
+
+      // Check if we are starting a declaration:
+      // Starts with '$', followed by any non-whitespace/non-brace char, and not preceded by '{'
+      if (normalized[i] === '$' && normalized[i + 1] && /[^\s{},;()\/]/.test(normalized[i + 1]) && (i === 0 || normalized[i - 1] !== '{')) {
+        i++; // skip '$'
+        // Read key name — allow any non-whitespace, non-special chars (including Korean)
+        let key = '';
+        while (i < len && /[^\s{},;()=+\-<>!&|\[\]\\:'"]/.test(normalized[i])) {
+          key += normalized[i];
+          i++;
+        }
+        if (!key) continue;
+
+        // Read declaration line until newline
+        let declarationLine = '';
+        while (i < len && normalized[i] !== '\n') {
+          declarationLine += normalized[i];
+          i++;
+        }
+
+        // Now, read the body lines until the next declaration starts or end of file
+        const bodyLines: string[] = [];
+        let currentLine = '';
+        
+        while (i < len) {
+          // Check if a new declaration starts (supports Unicode/Korean keys)
+          if (normalized[i] === '$' && normalized[i + 1] && /[^\s{},;()\/]/.test(normalized[i + 1]) && normalized[i - 1] !== '{') {
+            break;
+          }
+
+          // Skip comments in the body
+          if (normalized.startsWith('//', i)) {
+            const nextNewline = normalized.indexOf('\n', i);
+            i = nextNewline !== -1 ? nextNewline + 1 : len;
+            continue;
+          }
+          if (normalized.startsWith('#', i)) {
+            const nextNewline = normalized.indexOf('\n', i);
+            i = nextNewline !== -1 ? nextNewline + 1 : len;
+            continue;
+          }
+
+          const char = normalized[i];
+          if (char === '\n') {
+            const trimmed = currentLine.trim();
+            if (trimmed) {
+              bodyLines.push(trimmed);
+            }
+            currentLine = '';
+            i++;
+          } else {
+            currentLine += char;
+            i++;
+          }
+        }
+        if (currentLine.trim()) {
+          bodyLines.push(currentLine.trim());
+        }
+
+        // Extract condition from declarationLine using a brace balancer
+        let condition: string | undefined;
+        const ifIdx = declarationLine.toLowerCase().indexOf('{$if');
+        if (ifIdx !== -1) {
+          let braceCount = 1;
+          let idx = ifIdx + 1; // skip first '{' of '{$if'
+          const declLen = declarationLine.length;
+          let conditionContent = '';
+          while (idx < declLen && braceCount > 0) {
+            const char = declarationLine[idx];
+            if (char === '{') {
+              braceCount++;
+            } else if (char === '}') {
+              braceCount--;
+              if (braceCount === 0) break;
+            }
+            conditionContent += char;
+            idx++;
+          }
+          if (braceCount === 0) {
+            const trimCondition = conditionContent.replace(/^\$?if\s*/i, '').trim();
+            if (trimCondition.startsWith('(') && trimCondition.endsWith(')')) {
+              condition = trimCondition.slice(1, -1).trim();
+            } else {
+              condition = trimCondition;
+            }
+          }
+        }
+
+        const bodyText = bodyLines.join('\n').trim();
+        if (bodyText.startsWith('{') && !bodyText.startsWith('{$')) {
+          // Parse brace-enclosed blocks
+          let idx = 0;
+          const bodyLen = bodyText.length;
+          while (idx < bodyLen) {
+            while (idx < bodyLen && bodyText[idx] !== '{') {
+              idx++;
+            }
+            if (idx >= bodyLen) break;
+            idx++; // skip '{'
+
+            let braceCount = 1;
+            let blockContent = '';
+            let inString = false;
+            let escape = false;
+
+            while (idx < bodyLen && braceCount > 0) {
+              const char = bodyText[idx];
+              if (escape) {
+                blockContent += char;
+                escape = false;
+                idx++;
+                continue;
+              }
+              if (char === '\\') {
+                blockContent += char;
+                escape = true;
+                idx++;
+                continue;
+              }
+              if (char === '"') {
+                inString = !inString;
+              }
+              if (!inString) {
+                if (char === '{') braceCount++;
+                else if (char === '}') {
+                  braceCount--;
+                  if (braceCount === 0) {
+                    idx++; // skip closing '}'
+                    break;
+                  }
+                }
+              }
+              blockContent += char;
+              idx++;
+            }
+
+            if (blockContent.trim()) {
+              this.addMisakaScript(key, blockContent.trim(), condition);
+            }
+          }
+        } else {
+          // Plain list
+          for (const line of bodyLines) {
+            const trimmed = line.trim();
+            if (trimmed) {
+              this.addMisakaScript(key, trimmed, condition);
+            }
+          }
+        }
+      } else {
+        i++;
+      }
+    }
+  }
+
+  private addMisakaScript(key: string, script: string, conditionStr?: string) {
+    const normalizedKey = key.toLowerCase();
+    let condition: { refIndex: number; refValue: string; isNot?: boolean } | undefined;
+
+    if (conditionStr) {
+      // Parse simple e.g. {$reference(0)}==card or {$reference(0)}=="talkwithf" for compatibility
+      const refMatch = conditionStr.match(/\{\$reference\((\d+)\)\}\s*(==|!=)\s*(.*)/i);
+      if (refMatch) {
+        const refIndex = parseInt(refMatch[1], 10);
+        const op = refMatch[2];
+        let refValue = refMatch[3].trim();
+
+        if (refValue.startsWith('"') && refValue.endsWith('"')) {
+          refValue = refValue.slice(1, -1);
+        } else if (refValue.startsWith("'") && refValue.endsWith("'")) {
+          refValue = refValue.slice(1, -1);
+        }
+
+        condition = {
+          refIndex,
+          refValue,
+          isNot: op === '!=',
+        };
+      }
+    }
+
+    const scriptObj = { script: script.trim(), condition, conditionStr };
+
+    if (!this.misakaEvents[normalizedKey]) {
+      this.misakaEvents[normalizedKey] = [];
+    }
+    this.misakaEvents[normalizedKey].push(scriptObj);
+
+    if (!conditionStr) {
+      if (!this.rawKawari[normalizedKey]) {
+        this.rawKawari[normalizedKey] = [];
+      }
+      this.rawKawari[normalizedKey].push(script.trim());
+    }
+  }
+
+  private evaluateMisakaCondition(conditionStr: string, refParts: string[], key: string): boolean {
+    try {
+      let expr = conditionStr.trim().replace(/^\$?if\s*/i, '').trim();
+      const lowerKey = key.toLowerCase();
+      const isMouseEvent = lowerKey.startsWith('onmouse') || lowerKey === 'onmousemove';
+
+      // Replace references first: {$reference(N)}
+      expr = expr.replace(/\{\$reference\((\d+)\)\}/gi, (_match, p1) => {
+        const idx = parseInt(p1, 10);
+        let val = '';
+        if (isMouseEvent && refParts.length === 4) {
+          if (idx === 3) val = refParts[2]; // scope
+          else if (idx === 4) val = refParts[3]; // label
+          else val = refParts[idx] || '';
+        } else {
+          val = refParts[idx] || '';
+        }
+        if (/^[0-9]+$/.test(val)) {
+          return val;
+        }
+        return JSON.stringify(val);
+      });
+
+      // System variables
+      const now = new Date();
+      expr = expr.replace(/\{\$hour\}/gi, String(now.getHours()));
+      expr = expr.replace(/\{\$minute\}/gi, String(now.getMinutes()));
+      expr = expr.replace(/\{\$second\}/gi, String(now.getSeconds()));
+
+      // Fallback for other variables to 0/false
+      expr = expr.replace(/\{\$[A-Za-z0-9_.\-]+\}/g, '0');
+
+      // Operators normalization
+      expr = expr.replace(/==/g, '===');
+      expr = expr.replace(/!=/g, '!==');
+
+      // Strict validation for syntax safety
+      if (!/^[A-Za-z0-9\s()&|!=<>'\"_.\-,]+$/.test(expr)) {
+        return false;
+      }
+
+      // Convert unquoted labels in comparison to string literals
+      expr = expr.replace(/(===|!==|>=|<=|>|<)\s*([A-Za-z_][A-Za-z0-9_]*)/g, '$1 "$2"');
+      expr = expr.replace(/([A-Za-z_][A-Za-z0-9_]*)\s*(===|!==|>=|<=|>|<)/g, '"$1" $2');
+
+      const fn = new Function(`return !!(${expr});`);
+      return fn();
+    } catch (e) {
+      console.warn('[ShioriRunner] Condition evaluation failed:', conditionStr, e);
+      return false;
     }
   }
 }
