@@ -19,7 +19,7 @@ export class ShioriRunner {
   // Event name -> list of script strings
   private events: Record<string, string[]> = {};
   // Raw (unexpanded) Kawari key->value map for two-pass expansion
-  private rawKawari: Record<string, string> = {};
+  private rawKawari: Record<string, string[]> = {};
   // Random talk list (from aitalk.txt)
   private randomTalks: string[] = [];
 
@@ -111,8 +111,7 @@ export class ShioriRunner {
       }
     }
 
-    // Two-pass: expand Kawari ${variable} references now that all lines are parsed
-    this.expandKawariVars();
+    // We now expand Kawari variables dynamically at trigger-time for correct random choice selection
 
     // Add fallback scripts if empty to guarantee stability
     this.addFallbacks();
@@ -122,24 +121,36 @@ export class ShioriRunner {
    * Resolves ${VarName} references in all event scripts using the rawKawari map.
    * Runs up to 3 expansion passes to handle nested references.
    */
-  private expandKawariVars() {
-    const MAX_RESULT_LENGTH = 500; // Hard cap: no dialogue should exceed this
-    const MAX_DEPTH = 5;
+  private expandSingleKawariScript(script: string): string {
+    const MAX_RESULT_LENGTH = 1000;
+    // Allow slightly higher depth because variables can contain nested references
+    const MAX_DEPTH = 10;
 
-    // Track variables currently being expanded to break circular references
-    const expand = (str: string, depth: number, expandingVars: Set<string>): string => {
+    const expand = (str: string, depth: number, expandingVars: Record<string, number>): string => {
       if (depth > MAX_DEPTH) return str;
       if (str.length > MAX_RESULT_LENGTH) return str.substring(0, MAX_RESULT_LENGTH);
 
       return str.replace(/\$\{([A-Za-z0-9_.\-]+)\}/g, (_match, varName) => {
         const lower = varName.toLowerCase();
-        // Circular reference guard: if we're already expanding this var, stop
-        if (expandingVars.has(lower)) return '';
 
-        const val = this.rawKawari[lower] || this.rawKawari[varName];
-        if (val) {
-          const nextVars = new Set(expandingVars);
-          nextVars.add(lower);
+        const alternatives = this.rawKawari[lower] || this.rawKawari[varName];
+        if (alternatives && alternatives.length > 0) {
+          const count = expandingVars[lower] || 0;
+          let val: string;
+
+          if (count >= 2) {
+            // Force select a base case that doesn't reference itself
+            const baseCases = alternatives.filter(alt => !alt.toLowerCase().includes(`\${${lower}}`));
+            if (baseCases.length > 0) {
+              val = baseCases[Math.floor(Math.random() * baseCases.length)];
+            } else {
+              return ''; // No base case to terminate, stop
+            }
+          } else {
+            val = alternatives[Math.floor(Math.random() * alternatives.length)];
+          }
+
+          const nextVars = { ...expandingVars, [lower]: count + 1 };
           const expanded = expand(val, depth + 1, nextVars);
           return expanded.length > MAX_RESULT_LENGTH ? expanded.substring(0, MAX_RESULT_LENGTH) : expanded;
         }
@@ -149,12 +160,7 @@ export class ShioriRunner {
       });
     };
 
-    // Expand all event scripts
-    for (const key of Object.keys(this.events)) {
-      this.events[key] = this.events[key].map((s) => expand(s, 0, new Set()));
-    }
-    // Expand random talks
-    this.randomTalks = this.randomTalks.map((s) => expand(s, 0, new Set()));
+    return expand(script, 0, {});
   }
 
   private parseAitalk(content: string) {
@@ -771,6 +777,9 @@ export class ShioriRunner {
     const randomIndex = Math.floor(Math.random() * scriptList.length);
     let script = scriptList[randomIndex] || '';
 
+    // Expand Kawari variables dynamically
+    script = this.expandSingleKawariScript(script);
+
     // Safety guard: if script is abnormally long it indicates a bad expansion — discard it
     if (script.length > 2000) {
       console.warn(`[ShioriRunner] Script for event "${event}" exceeds max length (${script.length} chars), discarding.`);
@@ -854,34 +863,36 @@ export class ShioriRunner {
 
       if (!cleanVal) continue;
 
-      // Store all Kawari keys in rawKawari for two-pass ${var} expansion
-      // Only store the first definition (like Kawari priority semantics)
+      // Split by comma for alternatives (ignoring escaped commas \,)
+      const parts = cleanVal.split(/(?<!\\),/).map(p => p.replace(/\\,/g, ',').trim()).filter(Boolean);
+      if (parts.length === 0) continue;
+
       if (!this.rawKawari[key]) {
-        this.rawKawari[key] = cleanVal;
+        this.rawKawari[key] = [];
       }
+      this.rawKawari[key].push(...parts);
 
       // Skip lines that are pure Kawari code expressions (function calls, etc.)
       if (cleanVal.includes('$(')) {
         continue;
       }
 
-      // Lines starting with ${...} alone are variable references — store in events for expansion
-      // but also keep them in rawKawari (already done above)
-      // Remove leading ${...} control prefixes so they become valid script lines after expansion
-      let scriptVal = cleanVal;
-      // Strip leading control var patterns like ${countzero} that produce nothing
-      scriptVal = scriptVal.replace(/^\$\{[A-Za-z0-9_.\-]+\}/g, '').trim();
-      if (!scriptVal) continue;
+      // Process each alternative as a separate script choice
+      for (const part of parts) {
+        let scriptVal = part;
+        // Strip leading control var patterns like ${countzero} that produce nothing
+        scriptVal = scriptVal.replace(/^\$\{[A-Za-z0-9_.\-]+\}/g, '').trim();
+        if (!scriptVal) continue;
 
-      // Save all keys in case they map to events
-      if (!this.events[key]) {
-        this.events[key] = [];
-      }
-      this.events[key].push(scriptVal);
+        if (!this.events[key]) {
+          this.events[key] = [];
+        }
+        this.events[key].push(scriptVal);
 
-      // Only parse random talk sentences (keys starting with sentence)
-      if (key.startsWith('sentence')) {
-        this.randomTalks.push(scriptVal);
+        // Only parse random talk sentences (keys starting with sentence)
+        if (key.startsWith('sentence')) {
+          this.randomTalks.push(scriptVal);
+        }
       }
     }
   }
