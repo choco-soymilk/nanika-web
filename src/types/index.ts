@@ -22,6 +22,7 @@ export interface DialogueLine {
   emotion: Emotion;
   timestamp?: number; // Optional timestamp for history tracking
   speakerName?: string; // Optional custom name for Ukagaka characters
+  translatedText?: string; // Optional translated text
 }
 
 export type MockEventType =
@@ -41,4 +42,6 @@ export interface AppSettings {
   userName: string;
   maxHistoryLimit: number;
   language: 'ko' | 'en';
+  autoTranslate: boolean;
+  translationDisplayMode: 'both' | 'translationOnly';
 }

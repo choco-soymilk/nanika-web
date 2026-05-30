@@ -9,6 +9,8 @@ import { translations } from './data/translations';
 import { useUkagaka } from './hooks/useUkagaka';
 import { UkagakaRenderer } from './components/UkagakaRenderer';
 import { SpeechBubble } from './components/SpeechBubble';
+import { GeminiService } from './services/gemini';
+import { StorageService } from './services/storage';
 
 export default function App() {
   useWakeLock();
@@ -27,7 +29,10 @@ export default function App() {
     onBanterComplete,
     onBanterLineComplete,
     setIsUkagakaActive,
+    updateChatLineTranslation,
   } = useBanterLoop();
+
+  const handleTranslateBubbleRef = React.useRef<((scopeId: number, text: string) => Promise<string | null>) | null>(null);
 
   const {
     activeUkagaka,
@@ -39,7 +44,222 @@ export default function App() {
     loadUkagaka,
     unloadUkagaka,
     triggerEvent: triggerUkagakaEvent,
-  } = useUkagaka(settings.userName, settings.banterInterval, onBanterLineComplete);
+  } = useUkagaka(
+    settings.userName,
+    settings.banterInterval,
+    onBanterLineComplete,
+    React.useCallback((scope: number, text: string) => {
+      return handleTranslateBubbleRef.current ? handleTranslateBubbleRef.current(scope, text) : Promise.resolve(null);
+    }, [])
+  );
+
+  // Translation state for the current active speech bubbles (scopeId -> translated text)
+  const [bubbleTranslations, setBubbleTranslations] = useState<Record<number, string>>({});
+  const [isTranslatingBubble, setIsTranslatingBubble] = useState<Record<number, boolean>>({});
+
+  // History line index currently translating
+  const [translatingHistoryIndex, setTranslatingHistoryIndex] = useState<number | null>(null);
+
+  // Reset bubble translations whenever player state texts change
+  const lastBubbleTextsRef = React.useRef({ 0: '', 1: '' });
+
+  React.useEffect(() => {
+    const textsChanged =
+      playerState.texts[0] !== lastBubbleTextsRef.current[0] ||
+      playerState.texts[1] !== lastBubbleTextsRef.current[1];
+
+    if (textsChanged) {
+      setBubbleTranslations({});
+      setIsTranslatingBubble({});
+      lastBubbleTextsRef.current = {
+        0: playerState.texts[0],
+        1: playerState.texts[1],
+      };
+    }
+  }, [playerState.texts]);
+
+  // Auto-translate active speech bubbles when player finishes typing
+  React.useEffect(() => {
+    if (!settings.autoTranslate || !playerState.isFinished) return;
+
+    const targetLang = settings.language || 'ko';
+    const activeGhostName = activeUkagaka?.metadata.name || '';
+    const hasJapanese = /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uffef\u4e00-\u9faf]/;
+
+    const translateBubbleIfNeeded = async (scopeId: number) => {
+      const text = playerState.texts[scopeId]?.trim();
+      if (!text || bubbleTranslations[scopeId] || isTranslatingBubble[scopeId]) return;
+      if (!hasJapanese.test(text)) return;
+
+      const cached = StorageService.getTranslation(text, targetLang);
+      if (cached) {
+        const cleaned = GeminiService.stripSakuraScript(cached);
+        setBubbleTranslations((prev) => ({ ...prev, [scopeId]: cleaned }));
+        return;
+      }
+
+      const config = activeGhostName ? StorageService.getGhostConfig(activeGhostName) : { personality: '', description: '' };
+      const speakerName = scopeId === 0
+        ? (ghostMetadata?.sakuraName || 'Sakura')
+        : (ghostMetadata?.keroName || 'Kero');
+
+      setIsTranslatingBubble((prev) => ({ ...prev, [scopeId]: true }));
+      try {
+        const translated = await GeminiService.translateDialogue(
+          text,
+          targetLang,
+          speakerName,
+          activeGhostName,
+          config.personality,
+          config.description
+        );
+        StorageService.setTranslation(text, targetLang, translated);
+        setBubbleTranslations((prev) => ({ ...prev, [scopeId]: translated }));
+      } catch (err) {
+        console.error(`Auto-translate active bubble ${scopeId} error:`, err);
+      } finally {
+        setIsTranslatingBubble((prev) => ({ ...prev, [scopeId]: false }));
+      }
+    };
+
+    translateBubbleIfNeeded(0);
+    translateBubbleIfNeeded(1);
+  }, [playerState.isFinished, playerState.texts, settings.autoTranslate, settings.language, activeUkagaka, ghostMetadata, bubbleTranslations, isTranslatingBubble]);
+
+  // Auto-translate last few entries in history log
+  React.useEffect(() => {
+    if (!settings.autoTranslate) return;
+    if (chatHistory.length === 0) return;
+
+    const targetLang = settings.language || 'ko';
+    const activeGhostName = activeUkagaka?.metadata.name || '';
+    const hasJapanese = /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uffef\u4e00-\u9faf]/;
+
+    // Check last 5 entries to see if they need translation
+    const startIndex = Math.max(0, chatHistory.length - 5);
+
+    for (let idx = startIndex; idx < chatHistory.length; idx++) {
+      const line = chatHistory[idx];
+      if (line.character === 'user' || line.translatedText) continue;
+      if (!hasJapanese.test(line.text)) continue;
+
+      const targetIdx = idx;
+      const textToTranslate = line.text;
+      const speakerName = line.speakerName;
+
+      const runAutoTranslate = async () => {
+        // Check cache first
+        const cached = StorageService.getTranslation(textToTranslate, targetLang);
+        if (cached) {
+          const cleaned = GeminiService.stripSakuraScript(cached);
+          updateChatLineTranslation(targetIdx, cleaned);
+          return;
+        }
+
+        const config = activeGhostName ? StorageService.getGhostConfig(activeGhostName) : { personality: '', description: '' };
+        try {
+          const translated = await GeminiService.translateDialogue(
+            textToTranslate,
+            targetLang,
+            speakerName,
+            activeGhostName,
+            config.personality,
+            config.description
+          );
+
+          StorageService.setTranslation(textToTranslate, targetLang, translated);
+          updateChatLineTranslation(targetIdx, translated);
+        } catch (err: any) {
+          console.error('Auto translation error:', err);
+        }
+      };
+
+      runAutoTranslate();
+    }
+  }, [chatHistory, settings.autoTranslate, settings.language, activeUkagaka]);
+
+  const handleTranslateBubble = async (scopeId: number, text: string): Promise<string | null> => {
+    if (!text) return null;
+
+    const targetLang = settings.language || 'ko';
+    const activeGhostName = activeUkagaka?.metadata.name || '';
+
+    // Check cache first
+    const cached = StorageService.getTranslation(text, targetLang);
+    if (cached) {
+      const cleaned = GeminiService.stripSakuraScript(cached);
+      setBubbleTranslations((prev) => ({ ...prev, [scopeId]: cleaned }));
+      return cleaned;
+    }
+
+    const config = activeGhostName ? StorageService.getGhostConfig(activeGhostName) : { personality: '', description: '' };
+    const speakerName = scopeId === 0
+      ? (ghostMetadata?.sakuraName || 'Sakura')
+      : (ghostMetadata?.keroName || 'Kero');
+
+    setIsTranslatingBubble((prev) => ({ ...prev, [scopeId]: true }));
+    try {
+      const translated = await GeminiService.translateDialogue(
+        text,
+        targetLang,
+        speakerName,
+        activeGhostName,
+        config.personality,
+        config.description
+      );
+
+      StorageService.setTranslation(text, targetLang, translated);
+      setBubbleTranslations((prev) => ({ ...prev, [scopeId]: translated }));
+      return translated;
+    } catch (err: any) {
+      console.error('Bubble translation error:', err);
+      setApiError(err.message || 'Translation failed');
+      return null;
+    } finally {
+      setIsTranslatingBubble((prev) => ({ ...prev, [scopeId]: false }));
+    }
+  };
+
+  handleTranslateBubbleRef.current = handleTranslateBubble;
+
+  const handleTranslateHistoryLine = async (index: number) => {
+    const line = chatHistory[index];
+    if (!line || line.translatedText || translatingHistoryIndex !== null) return;
+
+    const text = line.text;
+    const targetLang = settings.language || 'ko';
+    const activeGhostName = activeUkagaka?.metadata.name || '';
+
+    // Check cache first
+    const cached = StorageService.getTranslation(text, targetLang);
+    if (cached) {
+      const cleaned = GeminiService.stripSakuraScript(cached);
+      updateChatLineTranslation(index, cleaned);
+      return;
+    }
+
+    const config = activeGhostName ? StorageService.getGhostConfig(activeGhostName) : { personality: '', description: '' };
+
+    setTranslatingHistoryIndex(index);
+    try {
+      const translated = await GeminiService.translateDialogue(
+        text,
+        targetLang,
+        line.speakerName,
+        activeGhostName,
+        config.personality,
+        config.description
+      );
+
+      StorageService.setTranslation(text, targetLang, translated);
+      updateChatLineTranslation(index, translated);
+    } catch (err: any) {
+      console.error('History line translation error:', err);
+      setApiError(err.message || 'Translation failed');
+    } finally {
+      setTranslatingHistoryIndex(null);
+    }
+  };
 
   React.useEffect(() => {
     setIsUkagakaActive(!!activeUkagaka);
@@ -77,9 +297,11 @@ export default function App() {
     banterInterval: number,
     userName: string,
     maxHistoryLimit: number,
-    language: 'ko' | 'en'
+    language: 'ko' | 'en',
+    autoTranslate: boolean,
+    translationDisplayMode: 'both' | 'translationOnly'
   ) => {
-    saveSettings(apiKey, banterInterval, userName, maxHistoryLimit, language);
+    saveSettings(apiKey, banterInterval, userName, maxHistoryLimit, language, autoTranslate, translationDisplayMode);
   };
 
   // Disable text entry ONLY when API request or Ukagaka processing is pending
@@ -159,6 +381,9 @@ export default function App() {
             language={settings.language}
             emptyMessage={activeUkagaka ? t.emptyHistoryUkagaka : undefined}
             isUkagakaActive={!!activeUkagaka}
+            onTranslateLine={handleTranslateHistoryLine}
+            translatingIndex={translatingHistoryIndex ?? undefined}
+            translationDisplayMode={settings.translationDisplayMode}
           />
         </main>
 
@@ -176,6 +401,10 @@ export default function App() {
                         emotion="calm"
                         isActive={playerState.scope === 0 && !playerState.isFinished}
                         side="left"
+                        onTranslate={() => handleTranslateBubble(0, playerState.texts[0])}
+                        translatedText={bubbleTranslations[0]}
+                        isTranslating={isTranslatingBubble[0]}
+                        translationDisplayMode={settings.translationDisplayMode}
                       >
                         {playerState.choices[0].length > 0 && (
                           <div className="choice-container" style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px', width: '100%' }}>
@@ -233,6 +462,10 @@ export default function App() {
                           emotion="calm"
                           isActive={playerState.scope === 1 && !playerState.isFinished}
                           side="right"
+                          onTranslate={() => handleTranslateBubble(1, playerState.texts[1])}
+                          translatedText={bubbleTranslations[1]}
+                          isTranslating={isTranslatingBubble[1]}
+                          translationDisplayMode={settings.translationDisplayMode}
                         >
                           {playerState.choices[1].length > 0 && (
                             <div className="choice-container" style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px', width: '100%' }}>

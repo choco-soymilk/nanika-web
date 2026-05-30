@@ -13,6 +13,8 @@ export function useBanterLoop() {
     userName: StorageService.getUserName(),
     maxHistoryLimit: StorageService.getMaxHistoryLimit(),
     language: StorageService.getLanguage(),
+    autoTranslate: StorageService.getAutoTranslate(),
+    translationDisplayMode: StorageService.getTranslationDisplayMode(),
   }));
 
   // History & dialogue state
@@ -160,12 +162,22 @@ export function useBanterLoop() {
   }, [triggerBanter]);
 
   // Settings modification
-  const saveSettings = useCallback((apiKey: string, banterInterval: number, userName: string, maxHistoryLimit: number, language: 'ko' | 'en') => {
+  const saveSettings = useCallback((
+    apiKey: string,
+    banterInterval: number,
+    userName: string,
+    maxHistoryLimit: number,
+    language: 'ko' | 'en',
+    autoTranslate: boolean,
+    translationDisplayMode: 'both' | 'translationOnly'
+  ) => {
     StorageService.setApiKey(apiKey);
     StorageService.setBanterInterval(banterInterval);
     StorageService.setUserName(userName);
     StorageService.setMaxHistoryLimit(maxHistoryLimit);
     StorageService.setLanguage(language);
+    StorageService.setAutoTranslate(autoTranslate);
+    StorageService.setTranslationDisplayMode(translationDisplayMode);
     
     // Trim current chat history state and localStorage when saved
     setChatHistory((prev) => {
@@ -174,7 +186,7 @@ export function useBanterLoop() {
       return trimmed;
     });
 
-    setSettings({ apiKey, banterInterval, userName, maxHistoryLimit, language });
+    setSettings({ apiKey, banterInterval, userName, maxHistoryLimit, language, autoTranslate, translationDisplayMode });
     setApiError(null);
   }, []);
 
@@ -196,6 +208,20 @@ export function useBanterLoop() {
     addLinesToHistory([line]);
   }, [addLinesToHistory]);
 
+  // Update a chat history line translation
+  const updateChatLineTranslation = useCallback((index: number, translatedText: string) => {
+    setChatHistory((prev) => {
+      const updated = prev.map((line, idx) => {
+        if (idx === index) {
+          return { ...line, translatedText };
+        }
+        return line;
+      });
+      StorageService.setChatHistory(updated);
+      return updated;
+    });
+  }, []);
+
   return {
     settings,
     chatHistory,
@@ -212,5 +238,6 @@ export function useBanterLoop() {
     onBanterComplete,
     onBanterLineComplete,
     setIsUkagakaActive,
+    updateChatLineTranslation,
   };
 }

@@ -403,5 +403,89 @@ export const GeminiService = {
       }
       return getMockDialogueForEvent(event, language);
     }
+  },
+
+  async translateDialogue(
+    text: string,
+    targetLanguage: 'ko' | 'en',
+    speakerName?: string,
+    ghostName?: string,
+    personalityTags?: string,
+    ghostDescription?: string
+  ): Promise<string> {
+    const apiKey = StorageService.getApiKey();
+    if (!apiKey) {
+      throw new Error('API key is not configured.');
+    }
+
+    await enforceRateLimit();
+
+    try {
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const model = genAI.getGenerativeModel({
+        model: 'gemini-3.1-flash-lite',
+      });
+
+      const characterInfo = [
+        speakerName ? `- Speaking character: ${speakerName}` : '',
+        ghostName ? `- Ghost package name: ${ghostName}` : '',
+        personalityTags ? `- Personality tags: ${personalityTags}` : '',
+        ghostDescription ? `- Description: ${ghostDescription}` : '',
+      ].filter(Boolean).join('\n');
+
+      const targetLangName = targetLanguage === 'ko' ? 'Korean' : 'English';
+
+      const prompt = `You are a professional localizer. Translate the following Japanese dialogue from a Ukagaka/desktop mascot character into natural ${targetLangName}.
+
+Character Context:
+${characterInfo || 'No extra character details provided. Translate naturally.'}
+
+Strict Rules:
+1. Translate the Japanese dialogue into natural, character-appropriate ${targetLangName} preserving their personality, politeness, gender, and style shown in the Japanese text.
+2. The dialogue contains SakuraScript control tags (like \\0, \\1, \\s[...], \\w[...], \\n, \\e, \\q[label,id]). You MUST preserve these control tags exactly in their relative positions. Do NOT translate or modify the tags, brackets, or tag arguments (except for choice labels, i.e., translate the "label" inside \\q[label,id] to ${targetLangName} but keep the "id" exactly as it is).
+3. Do NOT add any explanations, notes, markdown formatting (like \`\`\`), or extra commentary. Output ONLY the translated script.
+
+Dialogue to translate:
+${text}`;
+
+      const result = await model.generateContent({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.3,
+          maxOutputTokens: 256,
+        },
+      });
+
+      let translated = result.response.text().trim();
+      // Clean up markdown block wraps if Gemini ignored the instruction
+      translated = translated.replace(/^```[a-z]*\r?\n/i, '').replace(/\r?\n```$/g, '').trim();
+      
+      // Strip any SakuraScript control tags that the model injected or returned
+      translated = this.stripSakuraScript(translated);
+      
+      return translated;
+    } catch (err: any) {
+      console.error('Gemini translation error:', err);
+      throw new Error(err.message || 'Translation failed');
+    }
+  },
+
+  stripSakuraScript(text: string): string {
+    if (!text) return '';
+    let cleaned = text;
+    // 1. Normalize double backslashes
+    cleaned = cleaned.replace(/\\\\/g, '\\');
+    // 2. Replace choice tags \q[label,id] with just the label
+    cleaned = cleaned.replace(/\\q\[([^,\]]+),[^\]]*\]/g, '$1');
+    // 3. Replace \n (literal backslash n) with actual newline character
+    cleaned = cleaned.replace(/\\n/gi, '\n');
+    // 4. Remove parameterized action tags like \![...]
+    cleaned = cleaned.replace(/\\!\[[^\]]*\]/g, '');
+    // 5. Remove all other control tags like \0, \1, \s[0], \w[4], \e, \h, \u, etc.
+    cleaned = cleaned.replace(/\\_?[a-zA-Z0-9](?:\[[^\]]*\])?/g, '');
+    // 6. Remove any leftover trailing backslashes
+    cleaned = cleaned.replace(/\\+$/g, '');
+    
+    return cleaned.trim();
   }
 };
