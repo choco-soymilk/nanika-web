@@ -123,13 +123,26 @@ export class ShioriRunner {
    * Runs up to 3 expansion passes to handle nested references.
    */
   private expandKawariVars() {
-    const maxPasses = 4;
-    const expand = (str: string, depth: number): string => {
-      if (depth > maxPasses) return str;
+    const MAX_RESULT_LENGTH = 500; // Hard cap: no dialogue should exceed this
+    const MAX_DEPTH = 5;
+
+    // Track variables currently being expanded to break circular references
+    const expand = (str: string, depth: number, expandingVars: Set<string>): string => {
+      if (depth > MAX_DEPTH) return str;
+      if (str.length > MAX_RESULT_LENGTH) return str.substring(0, MAX_RESULT_LENGTH);
+
       return str.replace(/\$\{([A-Za-z0-9_.\-]+)\}/g, (_match, varName) => {
         const lower = varName.toLowerCase();
+        // Circular reference guard: if we're already expanding this var, stop
+        if (expandingVars.has(lower)) return '';
+
         const val = this.rawKawari[lower] || this.rawKawari[varName];
-        if (val) return expand(val, depth + 1);
+        if (val) {
+          const nextVars = new Set(expandingVars);
+          nextVars.add(lower);
+          const expanded = expand(val, depth + 1, nextVars);
+          return expanded.length > MAX_RESULT_LENGTH ? expanded.substring(0, MAX_RESULT_LENGTH) : expanded;
+        }
         // Known counters / control vars — strip silently
         if (lower.startsWith('count') || lower === '0') return '';
         return ''; // Strip unresolved vars
@@ -138,10 +151,10 @@ export class ShioriRunner {
 
     // Expand all event scripts
     for (const key of Object.keys(this.events)) {
-      this.events[key] = this.events[key].map((s) => expand(s, 0));
+      this.events[key] = this.events[key].map((s) => expand(s, 0, new Set()));
     }
     // Expand random talks
-    this.randomTalks = this.randomTalks.map((s) => expand(s, 0));
+    this.randomTalks = this.randomTalks.map((s) => expand(s, 0, new Set()));
   }
 
   private parseAitalk(content: string) {
@@ -749,6 +762,12 @@ export class ShioriRunner {
     // Pick a random script
     const randomIndex = Math.floor(Math.random() * scriptList.length);
     let script = scriptList[randomIndex] || '';
+
+    // Safety guard: if script is abnormally long it indicates a bad expansion — discard it
+    if (script.length > 2000) {
+      console.warn(`[ShioriRunner] Script for event "${event}" exceeds max length (${script.length} chars), discarding.`);
+      return '';
+    }
 
     // Apply template replacements
     script = this.replaceVariables(script, refParts);
