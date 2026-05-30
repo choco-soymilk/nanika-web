@@ -52,6 +52,10 @@ export function useUkagaka(
     translateFnRef.current = translateFn;
   }, [translateFn]);
 
+  useEffect(() => {
+    banterIntervalRef.current = banterInterval;
+  }, [banterInterval]);
+
 
   // Clean up and release Object URLs
   const unloadUkagaka = useCallback(() => {
