@@ -297,57 +297,52 @@ export class ShioriRunner {
       };
 
       for (const block of blocks) {
-        if (block.includes('--')) {
-          const parts = block.split('--');
-          const groups: string[][] = [];
-          
-          for (const part of parts) {
+        // Process line by line: each line is an independent dialogue alternative in AYA/YAYA.
+        // The -- operator only concatenates groups WITHIN a single line.
+        // Splitting the whole block by -- crosses line boundaries and creates wrong combinations.
+        const blines = block.split(/\r?\n/);
+        for (const bline of blines) {
+          const trimmedLine = bline.trim();
+          if (!trimmedLine) continue;
+
+          if (trimmedLine.includes('--')) {
+            // Within this line, -- separates groups to concatenate (pick one from each group).
+            const parts = trimmedLine.split('--');
+            const groups: string[][] = [];
+
+            for (const part of parts) {
+              const stringRegex = /"([^"\\]*(?:\\.[^"\\]*)*)"/g;
+              let strMatch;
+              const partStrings: string[] = [];
+              while ((strMatch = stringRegex.exec(part)) !== null) {
+                if (isVariableAssignment(strMatch.index, part)) continue;
+                let cleanStr = strMatch[1];
+                cleanStr = cleanStr.replace(/\\\\/g, '\\').replace(/\\"/g, '"');
+                partStrings.push(cleanStr);
+              }
+              if (partStrings.length > 0) groups.push(partStrings);
+            }
+
+            if (groups.length > 0) {
+              const combos: string[] = [];
+              const generate = (gIdx: number, currentStr: string) => {
+                if (gIdx === groups.length) { combos.push(currentStr); return; }
+                for (const s of groups[gIdx]) generate(gIdx + 1, currentStr + s);
+              };
+              generate(0, '');
+              for (const combo of combos) {
+                if (combo.includes('\\') || combo.length > 5) foundScripts.push(combo);
+              }
+            }
+          } else {
+            // No -- on this line: each quoted string is its own independent alternative.
             const stringRegex = /"([^"\\]*(?:\\.[^"\\]*)*)"/g;
             let strMatch;
-            const partStrings: string[] = [];
-            while ((strMatch = stringRegex.exec(part)) !== null) {
-              if (isVariableAssignment(strMatch.index, part)) {
-                continue;
-              }
+            while ((strMatch = stringRegex.exec(trimmedLine)) !== null) {
+              if (isVariableAssignment(strMatch.index, trimmedLine)) continue;
               let cleanStr = strMatch[1];
               cleanStr = cleanStr.replace(/\\\\/g, '\\').replace(/\\"/g, '"');
-              partStrings.push(cleanStr);
-            }
-            if (partStrings.length > 0) {
-              groups.push(partStrings);
-            }
-          }
-          
-          if (groups.length > 0) {
-            const combos: string[] = [];
-            const generate = (gIdx: number, currentStr: string) => {
-              if (gIdx === groups.length) {
-                combos.push(currentStr);
-                return;
-              }
-              for (const s of groups[gIdx]) {
-                generate(gIdx + 1, currentStr + s);
-              }
-            };
-            generate(0, '');
-            
-            for (const combo of combos) {
-              if (combo.includes('\\') || combo.length > 5) {
-                foundScripts.push(combo);
-              }
-            }
-          }
-        } else {
-          const stringRegex = /"([^"\\]*(?:\\.[^"\\]*)*)"/g;
-          let strMatch;
-          while ((strMatch = stringRegex.exec(block)) !== null) {
-            if (isVariableAssignment(strMatch.index, block)) {
-              continue;
-            }
-            let cleanStr = strMatch[1];
-            cleanStr = cleanStr.replace(/\\\\/g, '\\').replace(/\\"/g, '"');
-            if (cleanStr.includes('\\') || cleanStr.length > 5) {
-              foundScripts.push(cleanStr);
+              if (cleanStr.includes('\\') || cleanStr.length > 5) foundScripts.push(cleanStr);
             }
           }
         }
