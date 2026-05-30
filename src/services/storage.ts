@@ -7,6 +7,9 @@ const KEYS = {
   USER_NAME: 'nanika_web_user_name',
   MAX_HISTORY_LIMIT: 'nanika_web_max_history_limit',
   LANGUAGE: 'nanika_web_language',
+  TRANSLATION_CACHE: 'nanika_web_translation_cache',
+  AUTO_TRANSLATE: 'nanika_web_auto_translate',
+  TRANSLATION_DISPLAY_MODE: 'nanika_web_translation_display_mode',
 };
 
 export const StorageService = {
@@ -86,6 +89,86 @@ export const StorageService = {
 
   setLanguage(lang: 'ko' | 'en'): void {
     localStorage.setItem(KEYS.LANGUAGE, lang);
+  },
+
+  getAutoTranslate(): boolean {
+    const val = localStorage.getItem(KEYS.AUTO_TRANSLATE);
+    if (val !== null) {
+      return val === 'true';
+    }
+    const apiKey = this.getApiKey();
+    return !!apiKey;
+  },
+
+  setAutoTranslate(enabled: boolean): void {
+    localStorage.setItem(KEYS.AUTO_TRANSLATE, enabled ? 'true' : 'false');
+  },
+
+  getTranslationDisplayMode(): 'both' | 'translationOnly' {
+    const val = localStorage.getItem(KEYS.TRANSLATION_DISPLAY_MODE);
+    if (val === 'both' || val === 'translationOnly') {
+      return val;
+    }
+    return 'both';
+  },
+
+  setTranslationDisplayMode(mode: 'both' | 'translationOnly'): void {
+    localStorage.setItem(KEYS.TRANSLATION_DISPLAY_MODE, mode);
+  },
+
+  // Translation Cache Helpers
+  getTranslation(text: string, lang: 'ko' | 'en'): string | null {
+    const val = localStorage.getItem(KEYS.TRANSLATION_CACHE);
+    if (!val) return null;
+    try {
+      const cache = JSON.parse(val);
+      return cache[`${lang}:${text.trim()}`] || null;
+    } catch {
+      return null;
+    }
+  },
+
+  setTranslation(text: string, lang: 'ko' | 'en', translation: string): void {
+    let cache: Record<string, string> = {};
+    const val = localStorage.getItem(KEYS.TRANSLATION_CACHE);
+    if (val) {
+      try {
+        cache = JSON.parse(val);
+      } catch {}
+    }
+    cache[`${lang}:${text.trim()}`] = translation.trim();
+
+    // Limit cache size to 500 entries
+    const keys = Object.keys(cache);
+    if (keys.length > 500) {
+      const oldestKeys = keys.slice(0, keys.length - 500);
+      for (const k of oldestKeys) {
+        delete cache[k];
+      }
+    }
+
+    localStorage.setItem(KEYS.TRANSLATION_CACHE, JSON.stringify(cache));
+  },
+
+  clearTranslationCache(): void {
+    localStorage.removeItem(KEYS.TRANSLATION_CACHE);
+  },
+
+  // Ghost Configuration (Personality & Description) Helpers
+  getGhostConfig(ghostName: string): { personality: string; description: string } {
+    const key = `nanika_web_ghost_config_${ghostName}`;
+    const val = localStorage.getItem(key);
+    if (!val) return { personality: '', description: '' };
+    try {
+      return JSON.parse(val);
+    } catch {
+      return { personality: '', description: '' };
+    }
+  },
+
+  setGhostConfig(ghostName: string, config: { personality: string; description: string }): void {
+    const key = `nanika_web_ghost_config_${ghostName}`;
+    localStorage.setItem(key, JSON.stringify(config));
   },
 };
 

@@ -12,7 +12,8 @@ import type { DialogueLine } from '../types';
 export function useUkagaka(
   userName: string,
   banterInterval: number,
-  onLineComplete?: (line: DialogueLine) => void
+  onLineComplete?: (line: DialogueLine) => void,
+  translateFn?: (scope: number, text: string) => Promise<string | null>
 ) {
   const [activeUkagaka, setActiveUkagaka] = useState<NarMascotData | null>(null);
   const [shellData, setShellData] = useState<ShellData | null>(null);
@@ -46,9 +47,11 @@ export function useUkagaka(
     playerStateRef.current = playerState;
   }, [playerState]);
 
+  const translateFnRef = useRef(translateFn);
   useEffect(() => {
-    banterIntervalRef.current = banterInterval;
-  }, [banterInterval]);
+    translateFnRef.current = translateFn;
+  }, [translateFn]);
+
 
   // Clean up and release Object URLs
   const unloadUkagaka = useCallback(() => {
@@ -87,10 +90,21 @@ export function useUkagaka(
 
     const tokens = SakuraScriptParser.tokenize(script);
 
-    const flushedTexts = { 0: '', 1: '' };
+    const lastFlushedTexts = { 0: '', 1: '' };
     const flushTextToHistory = (scope: number, currentText: string) => {
-      const trimmed = currentText.trim();
-      if (trimmed && trimmed !== flushedTexts[scope as 0 | 1] && onLineComplete) {
+      // If the text has been cleared in the parser, reset our flushed anchor
+      if (currentText.length < lastFlushedTexts[scope as 0 | 1].length) {
+        lastFlushedTexts[scope as 0 | 1] = '';
+      }
+
+      const anchor = lastFlushedTexts[scope as 0 | 1];
+      let newText = currentText;
+      if (currentText.startsWith(anchor)) {
+        newText = currentText.substring(anchor.length);
+      }
+
+      const trimmed = newText.trim();
+      if (trimmed && onLineComplete) {
         const sakuraName = runnerRef.current?.getMetadata().sakuraName || 'Sakura';
         const keroName = runnerRef.current?.getMetadata().keroName || 'Kero';
         onLineComplete({
@@ -100,7 +114,7 @@ export function useUkagaka(
           emotion: 'calm',
           timestamp: Date.now(),
         });
-        flushedTexts[scope as 0 | 1] = trimmed;
+        lastFlushedTexts[scope as 0 | 1] = currentText;
       }
     };
 
@@ -131,7 +145,9 @@ export function useUkagaka(
           // Choice click handler
         },
         35, // Typing speed (ms per char)
-        abortController.signal
+        abortController.signal,
+        translateFnRef.current,
+        2500 // reading delay in ms
       );
 
       // Final flush at end of script

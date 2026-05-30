@@ -152,21 +152,55 @@ export class SakuraScriptParser {
           }
         } else if (nextChar === 'q') {
           i++; // Move past 'q'
-          if (script[i] === '[') {
+
+          // Kawari-style: \qN[ID][Label] — e.g. \q0[Manzai][交信]
+          // N is one or more digits optionally prefixed (e.g. 0, 1, 10...)
+          let kawariNum = '';
+          while (i < script.length && /[0-9]/.test(script[i])) {
+            kawariNum += script[i];
+            i++;
+          }
+
+          if (kawariNum.length > 0 && script[i] === '[') {
+            // Kawari format: \qN[id][label]
+            i++; // Move past '['
+            const idClose = script.indexOf(']', i);
+            if (idClose !== -1) {
+              const id = script.substring(i, idClose).trim();
+              i = idClose + 1;
+              // Now expect [label]
+              if (script[i] === '[') {
+                i++; // Move past '['
+                const labelClose = script.indexOf(']', i);
+                if (labelClose !== -1) {
+                  const label = script.substring(i, labelClose).trim();
+                  i = labelClose + 1;
+                  if (label) {
+                    flushText();
+                    commands.push({ type: 'choice', label, id });
+                  }
+                }
+              }
+            }
+          } else if (kawariNum.length === 0 && script[i] === '[') {
+            // Standard format: \q[label,id]
             i++; // Move past '['
             const closeBracket = script.indexOf(']', i);
             if (closeBracket !== -1) {
               const inner = script.substring(i, closeBracket);
-              const parts = inner.split(',');
-              if (parts.length >= 2) {
-                const label = parts[0].trim();
-                const id = parts[1].trim();
-                flushText();
-                commands.push({ type: 'choice', label, id });
+              const commaIdx = inner.indexOf(',');
+              if (commaIdx !== -1) {
+                const label = inner.slice(0, commaIdx).trim();
+                const id = inner.slice(commaIdx + 1).trim();
+                if (label) {
+                  flushText();
+                  commands.push({ type: 'choice', label, id });
+                }
               }
               i = closeBracket + 1;
             }
           }
+          // else: unrecognized format, skip
         } else {
           // Skip other unknown commands
           if (script[i] === '[') {
@@ -199,7 +233,9 @@ export class SakuraScriptParser {
     stateCallback: (state: SakuraPlayerState) => void,
     _onChoiceSelect: (choiceId: string) => void,
     typingSpeedMs: number = 40,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    translateFn?: (scope: number, text: string) => Promise<string | null>,
+    readingDelayMs: number = 2000
   ): Promise<void> {
     const state: SakuraPlayerState = {
       scope: 0,
@@ -230,11 +266,32 @@ export class SakuraScriptParser {
       }
     });
 
+    const translateCurrentScopeIfNeeded = async () => {
+      if (!translateFn || signal?.aborted) return;
+      const currentText = state.texts[state.scope]?.trim();
+      if (!currentText) return;
+
+      const hasJapanese = /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\uff00-\uffef\u4e00-\u9faf]/.test(currentText);
+      if (!hasJapanese) return;
+
+      try {
+        const translated = await translateFn(state.scope, currentText);
+        if (translated && !signal?.aborted) {
+          await sleep(readingDelayMs);
+        }
+      } catch (err) {
+        console.error('SakuraScriptParser translateCurrentScopeIfNeeded error:', err);
+      }
+    };
+
     for (const cmd of commands) {
       if (signal?.aborted) break;
 
       switch (cmd.type) {
         case 'scope':
+          if (cmd.value !== state.scope) {
+            await translateCurrentScopeIfNeeded();
+          }
           state.scope = cmd.value;
           stateCallback({ ...state });
           break;
@@ -254,6 +311,7 @@ export class SakuraScriptParser {
           break;
 
         case 'clear':
+          await translateCurrentScopeIfNeeded();
           state.texts[state.scope] = '';
           state.choices[state.scope] = [];
           stateCallback({ ...state });
@@ -274,12 +332,16 @@ export class SakuraScriptParser {
           break;
 
         case 'end':
+          await translateCurrentScopeIfNeeded();
           state.isFinished = true;
           stateCallback({ ...state });
           return;
       }
     }
 
+    if (!state.isFinished) {
+      await translateCurrentScopeIfNeeded();
+    }
     state.isFinished = true;
     stateCallback({ ...state });
   }

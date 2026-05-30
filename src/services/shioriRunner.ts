@@ -18,6 +18,8 @@ export class ShioriRunner {
 
   // Event name -> list of script strings
   private events: Record<string, string[]> = {};
+  // Raw (unexpanded) Kawari key->value map for two-pass expansion
+  private rawKawari: Record<string, string> = {};
   // Random talk list (from aitalk.txt)
   private randomTalks: string[] = [];
 
@@ -109,8 +111,37 @@ export class ShioriRunner {
       }
     }
 
+    // Two-pass: expand Kawari ${variable} references now that all lines are parsed
+    this.expandKawariVars();
+
     // Add fallback scripts if empty to guarantee stability
     this.addFallbacks();
+  }
+
+  /**
+   * Resolves ${VarName} references in all event scripts using the rawKawari map.
+   * Runs up to 3 expansion passes to handle nested references.
+   */
+  private expandKawariVars() {
+    const maxPasses = 4;
+    const expand = (str: string, depth: number): string => {
+      if (depth > maxPasses) return str;
+      return str.replace(/\$\{([A-Za-z0-9_.\-]+)\}/g, (match, varName) => {
+        const lower = varName.toLowerCase();
+        const val = this.rawKawari[lower] || this.rawKawari[varName];
+        if (val) return expand(val, depth + 1);
+        // Known counters / control vars — strip silently
+        if (lower.startsWith('count') || lower === '0') return '';
+        return ''; // Strip unresolved vars
+      });
+    };
+
+    // Expand all event scripts
+    for (const key of Object.keys(this.events)) {
+      this.events[key] = this.events[key].map((s) => expand(s, 0));
+    }
+    // Expand random talks
+    this.randomTalks = this.randomTalks.map((s) => expand(s, 0));
   }
 
   private parseAitalk(content: string) {
@@ -762,7 +793,8 @@ export class ShioriRunner {
       result = result.replace(/\$\{unyu\}/gi, '우뉴');
     }
     result = result.replace(/\$\{0\}/gi, '');
-    result = result.replace(/\$\{[A-Za-z0-9_-]+\}/gi, '');
+    // Strip any remaining unresolved Kawari vars (already expanded by expandKawariVars)
+    result = result.replace(/\$\{[A-Za-z0-9_.\-]+\}/gi, '');
 
     return result;
   }
@@ -795,20 +827,34 @@ export class ShioriRunner {
 
       if (!cleanVal) continue;
 
-      // Filter out Kawari code expressions (starts with $ or contains $() )
-      if (cleanVal.startsWith('$') || cleanVal.includes('$(')) {
+      // Store all Kawari keys in rawKawari for two-pass ${var} expansion
+      // Only store the first definition (like Kawari priority semantics)
+      if (!this.rawKawari[key]) {
+        this.rawKawari[key] = cleanVal;
+      }
+
+      // Skip lines that are pure Kawari code expressions (function calls, etc.)
+      if (cleanVal.includes('$(')) {
         continue;
       }
+
+      // Lines starting with ${...} alone are variable references — store in events for expansion
+      // but also keep them in rawKawari (already done above)
+      // Remove leading ${...} control prefixes so they become valid script lines after expansion
+      let scriptVal = cleanVal;
+      // Strip leading control var patterns like ${countzero} that produce nothing
+      scriptVal = scriptVal.replace(/^\$\{[A-Za-z0-9_.\-]+\}/g, '').trim();
+      if (!scriptVal) continue;
 
       // Save all keys in case they map to events
       if (!this.events[key]) {
         this.events[key] = [];
       }
-      this.events[key].push(cleanVal);
+      this.events[key].push(scriptVal);
 
       // Only parse random talk sentences (keys starting with sentence)
       if (key.startsWith('sentence')) {
-        this.randomTalks.push(cleanVal);
+        this.randomTalks.push(scriptVal);
       }
     }
   }
