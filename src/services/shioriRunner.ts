@@ -324,14 +324,27 @@ export class ShioriRunner {
             }
 
             if (groups.length > 0) {
-              const combos: string[] = [];
-              const generate = (gIdx: number, currentStr: string) => {
-                if (gIdx === groups.length) { combos.push(currentStr); return; }
-                for (const s of groups[gIdx]) generate(gIdx + 1, currentStr + s);
-              };
-              generate(0, '');
-              for (const combo of combos) {
-                if (combo.includes('\\') || combo.length > 5) foundScripts.push(combo);
+              // Kawari vs YAYA semantics for --:
+              // - If ALL groups have exactly 1 string each → Kawari style: pick ONE alternative from the whole line
+              // - If ANY group has 2+ strings → YAYA style: cartesian product (pick one from each group, concatenate)
+              const allSingle = groups.every(g => g.length === 1);
+              if (allSingle) {
+                // Kawari-style: each -- separated string is its own independent alternative
+                for (const group of groups) {
+                  const s = group[0];
+                  if (s.includes('\\') || s.length > 5) foundScripts.push(s);
+                }
+              } else {
+                // YAYA-style: cartesian product
+                const combos: string[] = [];
+                const generate = (gIdx: number, currentStr: string) => {
+                  if (gIdx === groups.length) { combos.push(currentStr); return; }
+                  for (const s of groups[gIdx]) generate(gIdx + 1, currentStr + s);
+                };
+                generate(0, '');
+                for (const combo of combos) {
+                  if (combo.includes('\\') || combo.length > 5) foundScripts.push(combo);
+                }
               }
             }
           } else {
