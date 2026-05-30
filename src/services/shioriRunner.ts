@@ -126,7 +126,7 @@ export class ShioriRunner {
     const maxPasses = 4;
     const expand = (str: string, depth: number): string => {
       if (depth > maxPasses) return str;
-      return str.replace(/\$\{([A-Za-z0-9_.\-]+)\}/g, (match, varName) => {
+      return str.replace(/\$\{([A-Za-z0-9_.\-]+)\}/g, (_match, varName) => {
         const lower = varName.toLowerCase();
         const val = this.rawKawari[lower] || this.rawKawari[varName];
         if (val) return expand(val, depth + 1);
