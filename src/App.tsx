@@ -40,6 +40,7 @@ export default function App() {
     ghostMetadata,
     playerState,
     isLoading: isUkagakaLoading,
+    isRestoring,
     error: ukagakaError,
     loadUkagaka,
     unloadUkagaka,
@@ -305,7 +306,7 @@ export default function App() {
   };
 
   // Disable text entry ONLY when API request or Ukagaka processing is pending
-  const inputDisabled = activeUkagaka ? (isUkagakaLoading || !playerState.isFinished) : isLoading;
+  const inputDisabled = isRestoring || (activeUkagaka ? (isUkagakaLoading || !playerState.isFinished) : isLoading);
 
   return (
     <div className="app-viewport">
@@ -389,7 +390,7 @@ export default function App() {
 
         {/* Mascot Speech Simulator Layer (Floating inside overlay above footer) */}
         <div className="character-fixed-overlay">
-          {activeUkagaka && shellData ? (
+          {isRestoring ? null : activeUkagaka && shellData ? (
             <div className="widget-container">
               <div className="widget-frame" style={{ width: '100%' }}>
                 <div className="characters-row" style={{ display: 'flex', justifyContent: 'center', alignItems: 'flex-end', width: '100%', gap: '16px' }}>
@@ -536,13 +537,15 @@ export default function App() {
               type="text"
               className="input-message"
               placeholder={
-                inputDisabled
-                  ? t.thinking
-                  : (activeUkagaka
-                      ? (settings.language === 'ko'
-                          ? `${ghostMetadata?.sakuraName || '사쿠라'}에게 말 걸기...`
-                          : `Talk to ${ghostMetadata?.sakuraName || 'Sakura'}...`)
-                      : t.talkPlaceholder)
+                isRestoring
+                  ? (settings.language === 'ko' ? '고스트를 불러오는 중...' : 'Loading ghost...')
+                  : (inputDisabled
+                      ? t.thinking
+                      : (activeUkagaka
+                          ? (settings.language === 'ko'
+                              ? `${ghostMetadata?.sakuraName || '사쿠라'}에게 말 걸기...`
+                              : `Talk to ${ghostMetadata?.sakuraName || 'Sakura'}...`)
+                          : t.talkPlaceholder))
               }
               value={messageInput}
               onChange={(e) => setMessageInput(e.target.value)}

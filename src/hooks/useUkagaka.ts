@@ -8,6 +8,7 @@ import type { GhostMetadata } from '../services/shioriRunner';
 import { SakuraScriptParser } from '../services/sakuraScriptParser';
 import type { SakuraPlayerState } from '../services/sakuraScriptParser';
 import type { DialogueLine } from '../types';
+import { GhostStorageService } from '../services/ghostStorage';
 
 export function useUkagaka(
   userName: string,
@@ -29,6 +30,7 @@ export function useUkagaka(
   });
 
   const [isLoading, setIsLoading] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -80,6 +82,7 @@ export function useUkagaka(
       isFinished: true,
     });
     setError(null);
+    GhostStorageService.clearLastGhost();
   }, []);
 
   const playScript = useCallback(async (script: string) => {
@@ -174,11 +177,10 @@ export function useUkagaka(
     }
   }, [playScript]);
 
-  const loadUkagaka = useCallback(async (file: File) => {
+  const loadMascot = useCallback(async (buffer: ArrayBuffer, fileName: string, shouldSave = true) => {
     setIsLoading(true);
     setError(null);
     try {
-      const buffer = await file.arrayBuffer();
       const mascotData = await NarExtractor.extract(buffer);
       const parsedShell = ShellParser.parse(mascotData.files);
       const parsedRunner = new ShioriRunner(mascotData.files, userName, mascotData.metadata.charset);
@@ -220,6 +222,9 @@ export function useUkagaka(
       const bootScript = parsedRunner.trigger('OnBoot');
       playScript(bootScript);
 
+      if (shouldSave) {
+        await GhostStorageService.saveLastGhost(fileName, buffer);
+      }
     } catch (e: any) {
       console.error('Failed to load Ukagaka:', e);
       setError(e.message || 'Failed to extract NAR file.');
@@ -228,6 +233,34 @@ export function useUkagaka(
       setIsLoading(false);
     }
   }, [userName, playScript, unloadUkagaka]);
+
+  const loadUkagaka = useCallback(async (file: File) => {
+    const buffer = await file.arrayBuffer();
+    await loadMascot(buffer, file.name, true);
+  }, [loadMascot]);
+
+  // Restore saved Ukagaka ghost on mount
+  useEffect(() => {
+    let active = true;
+    async function restoreGhost() {
+      try {
+        const saved = await GhostStorageService.getLastGhost();
+        if (saved && active) {
+          await loadMascot(saved.buffer, saved.name, false);
+        }
+      } catch (e) {
+        console.error('Error during ghost restoration:', e);
+      } finally {
+        if (active) {
+          setIsRestoring(false);
+        }
+      }
+    }
+    restoreGhost();
+    return () => {
+      active = false;
+    };
+  }, [loadMascot]);
 
   // Clean up on unmount
   useEffect(() => {
@@ -247,6 +280,7 @@ export function useUkagaka(
     ghostMetadata,
     playerState,
     isLoading,
+    isRestoring,
     error,
     loadUkagaka,
     unloadUkagaka,
